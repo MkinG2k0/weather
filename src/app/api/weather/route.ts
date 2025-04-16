@@ -1,8 +1,6 @@
 import { fetchWeatherApi } from 'openmeteo'
 import { NextResponse } from 'next/server'
 
-export const revalidate = 60 * 60
-
 function mapWeatherCodeToOWM(code: number) {
 	const mapping: Record<number, { main: string; description: string; icon: string }> = {
 		0: {main: 'Clear', description: 'clear sky', icon: '01d'},
@@ -43,7 +41,7 @@ function mapWeatherCodeToOWM(code: number) {
 		}
 	)
 }
-
+	
 export const GET = async (request: Request) => {
 	const {searchParams} = new URL(request.url)
 	const dateStr = searchParams.get('date')
@@ -296,5 +294,3 @@ export const GET = async (request: Request) => {
 		],
 	})
 }
-
-// http://localhost:3000/api/namaz?lat=42.899415&lng=47.561361

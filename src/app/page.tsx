@@ -1,5 +1,4 @@
 import { BASE_API } from '@/shared/config/env'
-import Image from 'next/image'
 
 export default async function Home() {
 	const data: any = await fetch(`${BASE_API}/weather`, {
