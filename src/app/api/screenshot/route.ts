@@ -5,7 +5,7 @@ import puppeteer from 'puppeteer'
 
 export async function GET(req: NextRequest) {
 	const {searchParams} = new URL(req.url)
-	const url = searchParams.get('url') || BASE_URL
+	const url = searchParams.get('url') || 'https://yandex.ru/internet?win=634'
 	const width = parseInt(searchParams.get('width') || '800')
 	const height = parseInt(searchParams.get('height') || '480')
 
