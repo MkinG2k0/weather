@@ -1,9 +1,9 @@
 import { BASE_API } from '@/shared/config/env'
 
 export default async function Home() {
-	const data: any = await fetch(`${BASE_API}/weather`, {
-		next: {revalidate: 120},
-	}).then((value) => value.json())
+	// const data: any = await fetch(`${BASE_API}/weather`, {
+	// 	next: {revalidate: 120},
+	// }).then((value) => value.json())
 
 	return (
 		<div
@@ -11,8 +11,8 @@ export default async function Home() {
 			<div>
 				Weather
 			</div>
-			{data?.current?.temp}
-			<div>{JSON.stringify(data?.current, null, '\n')}</div>
+			{/*{data?.current?.temp}*/}
+			{/*<div>{JSON.stringify(data?.current, null, '\n')}</div>*/}
 		</div>
 	)
 }
