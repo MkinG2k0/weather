@@ -1,63 +1,38 @@
-import { NextRequest } from 'next/server'
-import puppeteer from 'puppeteer'
+import {WeatherScreen} from '@/components/weather-screen'
+import {writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import path from 'node:path'
+import {ImageResponse} from 'next/og'
+import {createElement} from 'react'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
-const DEFAULT_URL = 'https://yandex.ru/internet?win=634'
-const NAVIGATION_TIMEOUT_MS = 60_000
-const RENDER_DELAY_MS = 2_000
+const WIDTH = 800
+const HEIGHT = 480
+const SCREENSHOT_PATH = process.env.VERCEL
+	? path.join(tmpdir(), 'screenshot.png')
+	: path.join(process.cwd(), 'public', 'screenshot.png')
 
-function getDimension(value: string | null, fallback: number) {
-	const parsed = Number.parseInt(value || '', 10)
-	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
-
-export async function GET(req: NextRequest) {
-	const {searchParams} = new URL(req.url)
-	const url = searchParams.get('url') || DEFAULT_URL
-	const width = getDimension(searchParams.get('width'), 800)
-	const height = getDimension(searchParams.get('height'), 480)
-
-	let browser: any = null
-
+export async function GET() {
 	try {
-		browser = await puppeteer.launch({
-			headless: true, // для Puppeteer 20+
-			args: ['--no-sandbox', '--disable-setuid-sandbox'],
+		const image = new ImageResponse(createElement(WeatherScreen, {generatedAt: new Date()}), {
+			width: WIDTH,
+			height: HEIGHT,
+			headers: {'Cache-Control': 'no-store'},
 		})
+		const buffer = Buffer.from(await image.arrayBuffer())
+		await writeFile(SCREENSHOT_PATH, buffer)
 
-		const page = await browser.newPage()
-		page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS)
-		await page.setViewport({width, height, deviceScaleFactor: 1})
-
-		// Dynamic pages such as Yandex Internetometer keep background requests
-		// alive, so networkidle2 may never be reached. DOMContentLoaded is the
-		// reliable navigation boundary; the short delay lets client-side UI render.
-		await page.goto(url, {
-			waitUntil: 'domcontentloaded',
-			timeout: NAVIGATION_TIMEOUT_MS,
-		})
-		await page.waitForSelector('body', {visible: true, timeout: 10_000})
-		await new Promise(resolve => setTimeout(resolve, RENDER_DELAY_MS))
-
-		const buffer = await page.screenshot({type: 'png'})
-
-		return new Response(new Uint8Array(buffer), {
+		return new Response(buffer, {
 			headers: {
 				'Content-Type': 'image/png',
 				'Cache-Control': 'no-store',
 			},
 		})
 	} catch (error) {
-		console.error('Ошибка при генерации скрина:', error)
-		return new Response(JSON.stringify({error: 'Failed to generate screenshot'}), {
-			status: 500,
-			headers: {'Content-Type': 'application/json'},
-		})
-	} finally {
-		if (browser) {
-			await browser.close()
-		}
+		console.error('Failed to generate weather screen:', error)
+		return Response.json({error: 'Failed to generate weather screen'}, {status: 500})
 	}
 }
