@@ -9,7 +9,7 @@ import {WeatherScreen} from '@/components/weather-screen'
 import {BLOCK_IDS,type BlockId,type EditablePanel} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
-type City={id:number;name:string;latitude:number;longitude:number;timezone:string}
+type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
 const blockNames:Record<BlockId,string>={current:'Температура',metrics:'Показатели',wind:'Ветер',sun:'Солнце',clouds:'Облачность'}
 const refreshPresets=[5,10,15,30,60,180,360,720,1440]
 
@@ -28,7 +28,7 @@ function InlineSortableBlock({id,blocks,onReplace,onRemove,children}:{id:BlockId
 
 export function PanelEditor({initialPanel,initialWeather,origin,username}:{initialPanel:EditablePanel;initialWeather:WeatherScreenData;origin:string;username:string}){
 	const router=useRouter();const [panel,setPanel]=useState(initialPanel);const [weather,setWeather]=useState(initialWeather);const [cityQuery,setCityQuery]=useState(panel.cityName)
-	const [cities,setCities]=useState<City[]>([]);const [searching,setSearching]=useState(false);const [previewLoading,setPreviewLoading]=useState(false)
+	const [cities,setCities]=useState<City[]>([]);const [searching,setSearching]=useState(false);const [searchAttempted,setSearchAttempted]=useState(false);const [locating,setLocating]=useState(false);const [cityError,setCityError]=useState('');const [previewLoading,setPreviewLoading]=useState(false)
 	const [message,setMessage]=useState('');const [saving,setSaving]=useState(false);const [previewScale,setPreviewScale]=useState(1);const previewHost=useRef<HTMLDivElement>(null)
 	const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
 	const baseUrl=`${origin}/d/${panel.slug}`;const screenUrl=`${baseUrl}/screen.png?v=${encodeURIComponent(panel.updatedAt)}`
@@ -36,7 +36,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	useEffect(()=>{const node=previewHost.current;if(!node)return;const resize=()=>setPreviewScale(Math.min(1,Math.max(.1,(node.clientWidth-16)/800)));resize();const observer=new ResizeObserver(resize);observer.observe(node);return()=>observer.disconnect()},[])
 	useEffect(()=>{
 		if(cityQuery.trim().length<2||cityQuery===panel.cityName)return
-		const controller=new AbortController();const timer=setTimeout(async()=>{setSearching(true);try{const response=await fetch(`/api/cities?q=${encodeURIComponent(cityQuery)}`,{signal:controller.signal});const data=await response.json();setCities(response.ok?data.results:[])}catch{if(!controller.signal.aborted)setCities([])}finally{if(!controller.signal.aborted)setSearching(false)}},350)
+		const controller=new AbortController();const timer=setTimeout(async()=>{setSearching(true);setCityError('');try{const response=await fetch(`/api/cities?q=${encodeURIComponent(cityQuery)}`,{signal:controller.signal});const data=await response.json();setCities(response.ok?data.results:[]);setSearchAttempted(true);if(!response.ok)setCityError(data.error??'Не удалось найти город')}catch{if(!controller.signal.aborted){setCities([]);setSearchAttempted(true);setCityError('Поиск временно недоступен')}}finally{if(!controller.signal.aborted)setSearching(false)}},350)
 		return()=>{clearTimeout(timer);controller.abort()}
 	},[cityQuery,panel.cityName])
 	useEffect(()=>{
@@ -49,6 +49,18 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	function replaceBlock(from:BlockId,to:BlockId){setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.map(id=>id===from?to:id)}})}
 	function removeBlock(id:BlockId){if(panel.layout.blocks.length===1)return;setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.filter(item=>item!==id)}})}
 	function addBlock(id:BlockId){if(panel.layout.blocks.length>=3||panel.layout.blocks.includes(id))return;setPanel({...panel,layout:{...panel.layout,blocks:[...panel.layout.blocks,id]}})}
+	function chooseCity(city:City){setPanel({...panel,cityName:city.name,latitude:city.latitude,longitude:city.longitude,timezone:city.timezone});setCityQuery(city.name);setCities([]);setSearchAttempted(false);setCityError('')}
+	async function locateCity(){
+		setCityError('');setLocating(true)
+		if(!navigator.geolocation){setCityError('Этот браузер не поддерживает геолокацию');setLocating(false);return}
+		try{
+			const position=await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:15_000,maximumAge:300_000}))
+			const response=await fetch(`/api/cities?lat=${position.coords.latitude}&lon=${position.coords.longitude}`);const data=await response.json()
+			if(!response.ok)throw new Error(data.error??'Не удалось определить город')
+			chooseCity(data.result)
+		}catch(error){const code=(error as GeolocationPositionError).code;setCityError(code===1?'Доступ к геопозиции запрещён в браузере':code===2?'Не удалось определить местоположение':code===3?'Определение местоположения заняло слишком много времени':error instanceof Error?error.message:'Не удалось определить город')}
+		finally{setLocating(false)}
+	}
 	async function save(){setSaving(true);setMessage('');const response=await fetch('/api/panel',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(panel)});const data=await response.json();if(response.ok){setPanel(data);setCityQuery(data.cityName);setMessage('Настройки сохранены.')}else setMessage(data.error??'Не удалось сохранить');setSaving(false)}
 	async function rotate(){if(!confirm('Старая ссылка перестанет работать. Создать новую?'))return;const response=await fetch('/api/panel/rotate',{method:'POST'});const data=await response.json();if(response.ok){setPanel(data);setMessage('Персональная ссылка заменена.')}else setMessage(data.error??'Не удалось заменить ссылку')}
 	async function copy(value:string){await navigator.clipboard.writeText(value);setMessage('Ссылка скопирована.')}
@@ -59,7 +71,10 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	return <main className="desk-shell"><header className="desk-header"><div><p className="eyebrow">E‑INK CONTROL DESK</p><h1>{panel.name}</h1></div><div className="header-actions"><span className="user-chip">{username}</span><button className="text-button" onClick={logout}>Выйти</button></div></header>
 		<div className="desk-grid"><aside className="control-rail">
 			<section className="control-section"><div className="section-heading"><span>01</span><h2>Место и формат</h2></div><label>Название панели<input value={panel.name} onChange={e=>setPanel({...panel,name:e.target.value})}/></label>
-				<label className="city-field">Город<input value={cityQuery} onChange={e=>{setCityQuery(e.target.value);setCities([])}} autoComplete="off"/><small>{searching?'Ищем…':`${panel.latitude.toFixed(3)}, ${panel.longitude.toFixed(3)} · ${panel.timezone}`}</small>{cities.length>0&&<div className="city-results">{cities.map(city=><button key={city.id} type="button" onClick={()=>{setPanel({...panel,cityName:city.name.split(',')[0],latitude:city.latitude,longitude:city.longitude,timezone:city.timezone});setCityQuery(city.name.split(',')[0]);setCities([])}}>{city.name}<small>{city.timezone}</small></button>)}</div>}</label>
+				<div className="city-picker"><label htmlFor="city-search">Город</label><div className="city-search-row"><div className="city-input-wrap"><span aria-hidden="true">⌕</span><input id="city-search" role="combobox" aria-expanded={searching||cities.length>0||searchAttempted} aria-controls="city-results" aria-autocomplete="list" placeholder="Начните вводить город" value={cityQuery} onChange={e=>{setCityQuery(e.target.value);setCities([]);setSearchAttempted(false);setCityError('')}} autoComplete="off"/>{searching&&<i aria-label="Поиск города"/>}</div><button className="locate-button" type="button" onClick={locateCity} disabled={locating}><span aria-hidden="true">◎</span>{locating?'Определяем…':'Определить по GPS'}</button></div>
+					{cityQuery.trim().length>=2&&cityQuery!==panel.cityName&&(searching||cities.length>0||searchAttempted)&&<div className="city-results" id="city-results" role="listbox">{searching&&<p>Ищем подходящие города…</p>}{!searching&&cities.map(city=><button key={city.id} type="button" role="option" aria-selected="false" onClick={()=>chooseCity(city)}><strong>{city.name}</strong><span>{[city.region,city.country].filter(Boolean).join(' · ')}</span><small>{city.timezone}</small></button>)}{!searching&&searchAttempted&&cities.length===0&&!cityError&&<p>Ничего не найдено. Проверьте название.</p>}</div>}
+					<div className="selected-city"><span className="selected-city-mark" aria-hidden="true">●</span><div><b>{panel.cityName}</b><small>{panel.latitude.toFixed(3)}, {panel.longitude.toFixed(3)} · {panel.timezone}</small></div></div>{cityError&&<p className="city-error" role="alert">{cityError}</p>}<p className="location-note">GPS используется только после нажатия. Геокодирование: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></p>
+				</div>
 				<div className="two-columns"><label>Язык<select value={panel.language} onChange={e=>setPanel({...panel,language:e.target.value as EditablePanel['language']})}><option value="RU">Русский</option><option value="EN">English</option></select></label><label>Единицы<select value={panel.unitSystem} onChange={e=>setPanel({...panel,unitSystem:e.target.value as EditablePanel['unitSystem']})}><option value="METRIC">°C · м/с · мм</option><option value="IMPERIAL">°F · mph · inHg</option></select></label></div>
 				<label>Обновление<select value={refreshValue} onChange={e=>setPanel({...panel,refreshMinutes:e.target.value==='custom'?90:Number(e.target.value)})}><option value={5}>5 минут</option><option value={10}>10 минут</option><option value={15}>15 минут</option><option value={30}>30 минут</option><option value={60}>1 час</option><option value={180}>3 часа</option><option value={360}>6 часов</option><option value={720}>12 часов</option><option value={1440}>1 день</option><option value="custom">Свой интервал</option></select></label>
 				{refreshValue==='custom'&&<label>Свой интервал, минут<input type="number" min={5} max={1440} value={panel.refreshMinutes} onChange={e=>setPanel({...panel,refreshMinutes:Math.max(5,Math.min(1440,Number(e.target.value)))})}/><small>От 5 минут до 1 дня</small></label>}
