@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Language {
+  RU
+  EN
+}
+
+enum UnitSystem {
+  METRIC
+  IMPERIAL
+}
+
+model User {
+  id           String         @id @default(cuid())
+  username     String         @unique
+  passwordHash String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sessions     Session[]
+  panels       WeatherPanel[]
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model WeatherPanel {
+  id             String     @id @default(cuid())
+  userId         String
+  name           String     @default("E-Ink Weather")
+  slug           String     @unique
+  cityName       String     @default("Махачкала")
+  latitude       Float      @default(42.9849)
+  longitude      Float      @default(47.5047)
+  timezone       String     @default("Europe/Moscow")
+  language       Language   @default(RU)
+  unitSystem     UnitSystem @default(METRIC)
+  refreshMinutes Int        @default(10)
+  layout         Json
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
