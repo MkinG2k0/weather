@@ -1,9 +1,9 @@
 'use client'
 
-import {useEffect,useMemo,useRef,useState} from 'react'
+import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react'
 import {useRouter} from 'next/navigation'
 import {closestCenter,DndContext,KeyboardSensor,PointerSensor,useSensor,useSensors,type DragEndEvent} from '@dnd-kit/core'
-import {arrayMove,sortableKeyboardCoordinates,SortableContext,useSortable,verticalListSortingStrategy} from '@dnd-kit/sortable'
+import {arrayMove,horizontalListSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
 import {CSS} from '@dnd-kit/utilities'
 import {WeatherScreen} from '@/components/weather-screen'
 import {BLOCK_IDS,type BlockId,type EditablePanel} from '@/lib/panel-config'
@@ -13,13 +13,16 @@ type City={id:number;name:string;latitude:number;longitude:number;timezone:strin
 const blockNames:Record<BlockId,string>={current:'Температура',metrics:'Показатели',wind:'Ветер',sun:'Солнце',clouds:'Облачность'}
 const refreshPresets=[5,10,15,30,60,180,360,720,1440]
 
-function SortableBlock({id,blocks,onReplace,onRemove}:{id:BlockId;blocks:BlockId[];onReplace:(from:BlockId,to:BlockId)=>void;onRemove:(id:BlockId)=>void}){
+function InlineSortableBlock({id,blocks,onReplace,onRemove,children}:{id:BlockId;blocks:BlockId[];onReplace:(from:BlockId,to:BlockId)=>void;onRemove:(id:BlockId)=>void;children:ReactNode}){
 	const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id})
 	const alternatives=BLOCK_IDS.filter(candidate=>candidate===id||!blocks.includes(candidate))
-	return <div ref={setNodeRef} className={`sortable-block${isDragging?' is-dragging':''}`} style={{transform:CSS.Transform.toString(transform),transition}}>
-		<button className="drag-handle" type="button" aria-label={`Переместить ${blockNames[id]}`} {...attributes} {...listeners}>⠿</button>
-		<select aria-label="Тип блока" value={id} onChange={event=>onReplace(id,event.target.value as BlockId)}>{alternatives.map(type=><option key={type} value={type}>{blockNames[type]}</option>)}</select>
-		<button className="remove-block" type="button" onClick={()=>onRemove(id)} disabled={blocks.length===1} aria-label={`Удалить ${blockNames[id]}`}>×</button>
+	return <div ref={setNodeRef} className={`inline-sortable${isDragging?' is-dragging':''}`} style={{transform:CSS.Transform.toString(transform),transition}}>
+		<div className="card-edit-bar">
+			<button className="inline-drag-handle" type="button" aria-label={`Переместить ${blockNames[id]}`} {...attributes} {...listeners}>⠿</button>
+			<select aria-label="Тип блока" value={id} onChange={event=>onReplace(id,event.target.value as BlockId)}>{alternatives.map(type=><option key={type} value={type}>{blockNames[type]}</option>)}</select>
+			<button className="inline-remove" type="button" onClick={()=>onRemove(id)} disabled={blocks.length===1} aria-label={`Удалить ${blockNames[id]}`}>×</button>
+		</div>
+		<div className="inline-card-content">{children}</div>
 	</div>
 }
 
@@ -61,15 +64,13 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 				<label>Обновление<select value={refreshValue} onChange={e=>setPanel({...panel,refreshMinutes:e.target.value==='custom'?90:Number(e.target.value)})}><option value={5}>5 минут</option><option value={10}>10 минут</option><option value={15}>15 минут</option><option value={30}>30 минут</option><option value={60}>1 час</option><option value={180}>3 часа</option><option value={360}>6 часов</option><option value={720}>12 часов</option><option value={1440}>1 день</option><option value="custom">Свой интервал</option></select></label>
 				{refreshValue==='custom'&&<label>Свой интервал, минут<input type="number" min={5} max={1440} value={panel.refreshMinutes} onChange={e=>setPanel({...panel,refreshMinutes:Math.max(5,Math.min(1440,Number(e.target.value)))})}/><small>От 5 минут до 1 дня</small></label>}
 			</section>
-			<section className="control-section"><div className="section-heading"><span>02</span><h2>Блоки экрана</h2></div><p className="section-note">Перетаскивайте блоки. Тип можно заменить без удаления.</p>
-				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={verticalListSortingStrategy}><div className="card-sorter">{panel.layout.blocks.map(id=><SortableBlock key={id} id={id} blocks={panel.layout.blocks} onReplace={replaceBlock} onRemove={removeBlock}/>)}</div></SortableContext></DndContext>
-				{panel.layout.blocks.length<3&&unusedBlocks.length>0&&<select className="add-block" value="" onChange={e=>{if(e.target.value)addBlock(e.target.value as BlockId)}}><option value="">+ Добавить блок</option>{unusedBlocks.map(id=><option key={id} value={id}>{blockNames[id]}</option>)}</select>}
-				<label className="forecast-toggle"><input type="checkbox" checked={panel.layout.showForecast} onChange={e=>setPanel({...panel,layout:{...panel.layout,showForecast:e.target.checked}})}/>Почасовой прогноз</label>
-			</section>
-			<section className="control-section link-section"><div className="section-heading"><span>03</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
+			<section className="control-section link-section"><div className="section-heading"><span>02</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
 			<div className="save-dock"><button className="primary-button" onClick={save} disabled={saving}>{saving?'Сохраняем…':'Сохранить изменения'}</button>{message&&<p className="save-message" role="status">{message}</p>}</div>
-		</aside><section className="preview-area"><div className="preview-label"><div><span>LIVE COMPONENT</span><b>800 × 480 / BLACK & WHITE</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
-			<div className="device-frame"><div className="screen-bezel component-host" ref={previewHost} style={{height:480*previewScale+16}}><div className="component-preview" style={{transform:`scale(${previewScale})`}}><WeatherScreen weather={previewWeather}/></div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>FPC‑8612</span><i/><span>SPI / 7.5″</span></div></div>
+		</aside><section className="preview-area"><div className="preview-label"><div><span>EDIT ON SCREEN</span><b>Тяните карточки · меняйте тип в синей панели</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
+			<div className="device-frame"><div className="screen-bezel component-host" ref={previewHost} style={{height:480*previewScale+16}}><div className="component-preview" style={{transform:`scale(${previewScale})`}}>
+				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={horizontalListSortingStrategy}><WeatherScreen weather={previewWeather} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} blocks={panel.layout.blocks} onReplace={replaceBlock} onRemove={removeBlock}>{content}</InlineSortableBlock>} addSlot={panel.layout.blocks.length<3&&unusedBlocks.length>0?<div className="inline-add-slot"><select aria-label="Добавить блок" value="" onChange={e=>{if(e.target.value)addBlock(e.target.value as BlockId)}}><option value="">+ Добавить блок</option>{unusedBlocks.map(id=><option key={id} value={id}>{blockNames[id]}</option>)}</select></div>:undefined}/></SortableContext></DndContext>
+				<button className={`forecast-screen-toggle${panel.layout.showForecast?' is-active':''}`} type="button" onClick={()=>setPanel({...panel,layout:{...panel.layout,showForecast:!panel.layout.showForecast}})}>{panel.layout.showForecast?'Прогноз включён':'Добавить прогноз'}</button>
+			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>FPC‑8612</span><i/><span>SPI / 7.5″</span></div></div>
 			<div className="endpoint-strip"><div><span>CONFIG</span><code>{baseUrl}/config</code></div><button onClick={()=>copy(`${baseUrl}/config`)}>Копировать</button></div>
 		</section></div>
 	</main>

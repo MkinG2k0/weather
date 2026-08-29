@@ -2,7 +2,12 @@ import type {CSSProperties, ReactNode} from 'react'
 import type {BlockId} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
-type WeatherScreenProps = {weather: WeatherScreenData; generatedAt?: Date}
+type WeatherScreenProps = {
+	weather: WeatherScreenData
+	generatedAt?: Date
+	renderBlock?: (id:BlockId,content:ReactNode)=>ReactNode
+	addSlot?: ReactNode
+}
 const panel: CSSProperties = {display:'flex', flex:1, minWidth:0, border:'3px solid #000', background:'#fff'}
 const text = (size:number, weight:number=700): CSSProperties => ({display:'flex', fontSize:size, fontWeight:weight})
 
@@ -53,7 +58,7 @@ const cardRenderers: Record<BlockId,(weather:WeatherScreenData)=>ReactNode> = {
 	current:weather=><CurrentCard weather={weather}/>,metrics:weather=><MetricsCard weather={weather}/>,wind:weather=><WindCard weather={weather}/>,sun:weather=><SunCard weather={weather}/>,clouds:weather=><CloudsCard weather={weather}/>,
 }
 
-export function WeatherScreen({weather,generatedAt=new Date()}:WeatherScreenProps) {
+export function WeatherScreen({weather,generatedAt=new Date(),renderBlock,addSlot}:WeatherScreenProps) {
 	const locale = weather.labels.wind === 'ВЕТЕР' ? 'ru-RU' : 'en-GB'
 	const date = new Intl.DateTimeFormat(locale,{timeZone:weather.timezone,weekday:'short',day:'2-digit',month:'short'}).format(generatedAt).toUpperCase()
 	const time = new Intl.DateTimeFormat('en-GB',{timeZone:weather.timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(generatedAt)
@@ -63,7 +68,7 @@ export function WeatherScreen({weather,generatedAt=new Date()}:WeatherScreenProp
 			<div style={{display:'flex',alignItems:'baseline',gap:14}}><div style={{...text(25,900),letterSpacing:.7}}>{weather.city}</div><div style={{...text(10),letterSpacing:1.5}}>{weather.coordinates}</div></div>
 			<div style={{display:'flex',alignItems:'center',gap:16}}><div style={{...text(12,800),letterSpacing:1}}>{date}</div><div style={text(24,900)}>{time}</div></div>
 		</header>
-		<div style={{display:'flex',flex:1,padding:14,gap:12}}>{visibleCards.map(id => <div key={id} style={{display:'flex',flex:1,minWidth:0}}>{cardRenderers[id](weather)}</div>)}</div>
+		<div style={{display:'flex',flex:1,padding:14,gap:12}}>{visibleCards.map(id => renderBlock ? renderBlock(id,cardRenderers[id](weather)) : <div key={id} style={{display:'flex',flex:1,minWidth:0}}>{cardRenderers[id](weather)}</div>)}{addSlot}</div>
 		{weather.layout.showForecast && <footer style={{display:'flex',height:126,borderTop:'5px solid #000'}}>{weather.forecast.map((item,index)=><div key={`${item.time}-${index}`} style={{display:'flex',flex:1,minWidth:0,alignItems:'center',justifyContent:'space-between',gap:6,padding:'10px 12px',borderLeft:index===0?'none':'3px solid #000'}}><div style={{display:'flex',width:100,minWidth:0,flexDirection:'column',gap:8}}><div style={{...text(12,900),letterSpacing:1}}>{item.time}</div><div style={{...text(8,800),lineHeight:1.15,letterSpacing:.7}}>{item.mark}</div></div><div style={{...text(27,900),flexShrink:0}}>{item.temp}</div></div>)}</footer>}
 	</div>
 }
