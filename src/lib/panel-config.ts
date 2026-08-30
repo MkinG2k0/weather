@@ -1,10 +1,11 @@
-export const BLOCK_IDS = ['current','metrics','wind','sun','clouds'] as const
+export const BLOCK_IDS = ['current','forecast','feels','humidity','pressure','precipitation','metrics','wind','sun','clouds'] as const
 export type BlockId = (typeof BLOCK_IDS)[number]
 export type LanguageCode = 'RU'|'EN'
 export type UnitSystemCode = 'METRIC'|'IMPERIAL'
 
-export type PanelLayout = {blocks:BlockId[];showForecast:boolean}
-export const DEFAULT_LAYOUT:PanelLayout={blocks:['current','metrics','wind'],showForecast:true}
+export const MAX_BLOCKS = 4
+export type PanelLayout = {blocks:BlockId[]}
+export const DEFAULT_LAYOUT:PanelLayout={blocks:['current','metrics','wind','forecast']}
 
 export type EditablePanel={
 	id:string;name:string;slug:string;cityName:string;latitude:number;longitude:number;timezone:string
@@ -20,6 +21,9 @@ export function normalizeLayout(value:unknown):PanelLayout{
 		const hidden=new Set(Array.isArray(source.hidden)?source.hidden:[])
 		candidates=source.order.filter(id=>!hidden.has(id))
 	}
-	const blocks=[...new Set(candidates.filter((id):id is BlockId=>BLOCK_IDS.includes(id as BlockId)))].slice(0,3)
-	return {blocks:blocks.length?blocks:DEFAULT_LAYOUT.blocks,showForecast:source.showForecast!==false}
+	const blocks=[...new Set(candidates.filter((id):id is BlockId=>BLOCK_IDS.includes(id as BlockId)))]
+	// Forecast used to be a special footer. Promote it to a regular card when
+	// loading old saved layouts, so no database migration is required.
+	if(source.showForecast===true&&!blocks.includes('forecast'))blocks.push('forecast')
+	return {blocks:(blocks.length?blocks:DEFAULT_LAYOUT.blocks).slice(0,MAX_BLOCKS)}
 }

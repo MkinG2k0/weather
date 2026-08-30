@@ -6,11 +6,11 @@ import {closestCenter,DndContext,KeyboardSensor,PointerSensor,useSensor,useSenso
 import {arrayMove,horizontalListSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
 import {CSS} from '@dnd-kit/utilities'
 import {WeatherScreen} from '@/components/weather-screen'
-import {BLOCK_IDS,type BlockId,type EditablePanel} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS,type BlockId,type EditablePanel} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
-const blockNames:Record<BlockId,string>={current:'Температура',metrics:'Показатели',wind:'Ветер',sun:'Солнце',clouds:'Облачность'}
+const blockNames:Record<BlockId,string>={current:'Температура',forecast:'Прогноз',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Осадки',metrics:'Показатели',wind:'Ветер',sun:'Солнце',clouds:'Облачность'}
 const refreshPresets=[5,10,15,30,60,180,360,720,1440]
 
 function InlineSortableBlock({id,blocks,onReplace,onRemove,children}:{id:BlockId;blocks:BlockId[];onReplace:(from:BlockId,to:BlockId)=>void;onRemove:(id:BlockId)=>void;children:ReactNode}){
@@ -48,7 +48,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	function onDragEnd(event:DragEndEvent){const active=event.active.id as BlockId;const over=event.over?.id as BlockId|undefined;if(!over||active===over)return;const oldIndex=panel.layout.blocks.indexOf(active);const newIndex=panel.layout.blocks.indexOf(over);setPanel({...panel,layout:{...panel.layout,blocks:arrayMove(panel.layout.blocks,oldIndex,newIndex)}})}
 	function replaceBlock(from:BlockId,to:BlockId){setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.map(id=>id===from?to:id)}})}
 	function removeBlock(id:BlockId){if(panel.layout.blocks.length===1)return;setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.filter(item=>item!==id)}})}
-	function addBlock(id:BlockId){if(panel.layout.blocks.length>=3||panel.layout.blocks.includes(id))return;setPanel({...panel,layout:{...panel.layout,blocks:[...panel.layout.blocks,id]}})}
+	function addBlock(id:BlockId){if(panel.layout.blocks.length>=MAX_BLOCKS||panel.layout.blocks.includes(id))return;setPanel({...panel,layout:{...panel.layout,blocks:[...panel.layout.blocks,id]}})}
 	function chooseCity(city:City){setPanel({...panel,cityName:city.name,latitude:city.latitude,longitude:city.longitude,timezone:city.timezone});setCityQuery(city.name);setCities([]);setSearchAttempted(false);setCityError('')}
 	async function locateCity(){
 		setCityError('');setLocating(true)
@@ -81,10 +81,9 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 			</section>
 			<section className="control-section link-section"><div className="section-heading"><span>02</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
 			<div className="save-dock"><button className="primary-button" onClick={save} disabled={saving}>{saving?'Сохраняем…':'Сохранить изменения'}</button>{message&&<p className="save-message" role="status">{message}</p>}</div>
-		</aside><section className="preview-area"><div className="preview-label"><div><span>EDIT ON SCREEN</span><b>Тяните карточки · меняйте тип в синей панели</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
+		</aside><section className="preview-area"><div className="preview-label"><div><span>EDIT ON SCREEN</span><b>До 4 карточек · тяните, меняйте тип или удаляйте</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="device-frame"><div className="screen-bezel component-host" ref={previewHost} style={{height:480*previewScale+16}}><div className="component-preview" style={{transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={horizontalListSortingStrategy}><WeatherScreen weather={previewWeather} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} blocks={panel.layout.blocks} onReplace={replaceBlock} onRemove={removeBlock}>{content}</InlineSortableBlock>} addSlot={panel.layout.blocks.length<3&&unusedBlocks.length>0?<div className="inline-add-slot"><select aria-label="Добавить блок" value="" onChange={e=>{if(e.target.value)addBlock(e.target.value as BlockId)}}><option value="">+ Добавить блок</option>{unusedBlocks.map(id=><option key={id} value={id}>{blockNames[id]}</option>)}</select></div>:undefined}/></SortableContext></DndContext>
-				<button className={`forecast-screen-toggle${panel.layout.showForecast?' is-active':''}`} type="button" onClick={()=>setPanel({...panel,layout:{...panel.layout,showForecast:!panel.layout.showForecast}})}>{panel.layout.showForecast?'Прогноз включён':'Добавить прогноз'}</button>
+				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={horizontalListSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} blocks={panel.layout.blocks} onReplace={replaceBlock} onRemove={removeBlock}>{content}</InlineSortableBlock>} addSlot={panel.layout.blocks.length<MAX_BLOCKS&&unusedBlocks.length>0?<div className="inline-add-slot"><select aria-label="Добавить блок" value="" onChange={e=>{if(e.target.value)addBlock(e.target.value as BlockId)}}><option value="">+ Добавить блок</option>{unusedBlocks.map(id=><option key={id} value={id}>{blockNames[id]}</option>)}</select></div>:undefined}/></SortableContext></DndContext>
 			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>FPC‑8612</span><i/><span>SPI / 7.5″</span></div></div>
 			<div className="endpoint-strip"><div><span>CONFIG</span><code>{baseUrl}/config</code></div><button onClick={()=>copy(`${baseUrl}/config`)}>Копировать</button></div>
 		</section></div>

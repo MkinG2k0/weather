@@ -1,12 +1,12 @@
 import {z} from 'zod'
 import {getCurrentUser} from '@/lib/auth'
-import {BLOCK_IDS} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS} from '@/lib/panel-config'
 import {getWeatherScreenData} from '@/lib/weather'
 
 const schema=z.object({
 	cityName:z.string().trim().min(1).max(120),latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180),timezone:z.string().min(1).max(80),
 	language:z.enum(['RU','EN']),unitSystem:z.enum(['METRIC','IMPERIAL']),
-	layout:z.object({blocks:z.array(z.enum(BLOCK_IDS)).min(1).max(3),showForecast:z.boolean()}),
+	layout:z.object({blocks:z.array(z.enum(BLOCK_IDS)).min(1).max(MAX_BLOCKS)}),
 })
 
 export async function POST(request:Request){

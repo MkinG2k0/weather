@@ -20,6 +20,7 @@ export type WeatherScreenData = {
 	city: string
 	coordinates: string
 	timezone: string
+	observedAt: string
 	temperature: number
 	feelsLike: number
 	high: number
@@ -86,7 +87,7 @@ export async function getWeatherScreenData(settings: WeatherSettings = DEFAULT_W
 		? `${(data.current.surface_pressure * 0.029529983).toFixed(2)} inHg`
 		: `${Math.round(data.current.surface_pressure * 0.750061683)} мм`
 	return {
-		city:settings.cityName.toUpperCase(), timezone:settings.timezone,
+		city:settings.cityName.toUpperCase(), timezone:settings.timezone, observedAt:data.current.time,
 		coordinates:`${Math.abs(settings.latitude).toFixed(2)} ${settings.latitude>=0?'N':'S'} / ${Math.abs(settings.longitude).toFixed(2)} ${settings.longitude>=0?'E':'W'}`,
 		temperature:Math.round(convertTemperature(data.current.temperature_2m,settings.unitSystem)),
 		feelsLike:Math.round(convertTemperature(data.current.apparent_temperature,settings.unitSystem)),

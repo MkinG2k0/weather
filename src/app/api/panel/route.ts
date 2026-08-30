@@ -1,6 +1,6 @@
 import {z} from 'zod'
 import {getCurrentUser} from '@/lib/auth'
-import {BLOCK_IDS} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS} from '@/lib/panel-config'
 import {serializePanel} from '@/lib/panel-data'
 import {prisma} from '@/lib/prisma'
 
@@ -14,8 +14,7 @@ const schema = z.object({
 	unitSystem: z.enum(['METRIC', 'IMPERIAL']),
 	refreshMinutes: z.number().int().min(5).max(1440),
 	layout: z.object({
-		blocks: z.array(z.enum(BLOCK_IDS)).min(1).max(3).refine(items=>new Set(items).size===items.length,'Блоки не должны повторяться'),
-		showForecast: z.boolean(),
+		blocks: z.array(z.enum(BLOCK_IDS)).min(1).max(MAX_BLOCKS).refine(items=>new Set(items).size===items.length,'Блоки не должны повторяться'),
 	}),
 })
 
