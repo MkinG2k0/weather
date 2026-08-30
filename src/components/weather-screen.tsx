@@ -465,6 +465,7 @@ export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,
 		minHeight:0,
 		overflow:'hidden' as const,
 		borderRadius:`${radius}px`,
+		background:chrome.cardBg,
 	})
 	const filled=header.style==='fill'
 	const headerBg=filled?chrome.headerBg:chrome.paper
@@ -478,14 +479,15 @@ export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,
 	const battH=Math.max(8,Math.round(11*scale*(header.size==='s'?0.85:header.size==='l'?1.15:1)))
 	const battFill=showBattery?Math.max(0,Math.round((battW-6)*Math.min(100,Math.max(0,weather.batteryPercent??0))/100)):0
 	const outerRadius=radius?(frame?radius+frame:radius):0
-	const headerBar=header.visible?<div style={{height:headerH,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px',background:headerBg,color:headerFg,boxSizing:'border-box',overflow:'hidden',borderTopLeftRadius:radius,borderTopRightRadius:radius,...(header.style==='line'?{borderBottom:`3px solid ${chrome.ink}`}:{})}}>
+	const clipBg=header.visible&&filled?headerBg:chrome.paper
+	const headerBar=header.visible?<div style={{height:headerH,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px',background:headerBg,color:headerFg,boxSizing:'border-box',overflow:'hidden',...(header.style==='line'?{borderBottom:`3px solid ${chrome.ink}`}:{})}}>
 			{showLeft?<div style={{display:'flex',alignItems:'baseline',gap:10,minWidth:0}}>{header.showCity?<div style={{...text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:25)*scale)),900),letterSpacing:.7}}>{title}</div>:null}{header.showCoords?<div style={{...text(Math.max(8,Math.round(10*scale))),letterSpacing:1.5}}>{weather.coordinates}</div>:null}</div>:<div/>}
 			{showRight?<div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>{header.showDate?<div style={{...text(Math.max(9,Math.round(12*scale)),800),letterSpacing:1}}>{date}</div>:null}{header.showTime?<div style={text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:24)*scale)),900)}>{time}</div>:null}{showBattery?<div style={{display:'flex',alignItems:'center',gap:6}}><div style={{display:'flex',width:battW,height:battH,border:`2px solid ${headerFg}`,padding:1,boxSizing:'border-box'}}><div style={{width:battFill,height:'100%',background:headerFg}}/></div><div style={{width:3,height:Math.max(4,Math.round(battH*0.45)),background:headerFg}}/><div style={text(Math.max(12,Math.round((header.size==='s'?16:header.size==='l'?22:18)*scale)),900)}>{weather.batteryPercent}%</div></div>:null}</div>:null}
 		</div>:null
-	return <div style={{width:screenW,height:screenH,display:'flex',flexDirection:'column',background:frame?chrome.frame:chrome.paper,color:chrome.ink,fontFamily:renderBlock?undefined:SCREEN_FONT_FAMILY,fontSize:fs(16),padding:frame,borderRadius:outerRadius,overflow:'hidden',boxSizing:'border-box'}}>
-		<div style={{display:'flex',flex:1,minHeight:0,flexDirection:'column',background:chrome.paper,borderRadius:radius,overflow:'hidden'}}>
+	return <div style={{width:screenW,height:screenH,display:'flex',flexDirection:'column',background:frame?chrome.frame:clipBg,color:chrome.ink,fontFamily:renderBlock?undefined:SCREEN_FONT_FAMILY,fontSize:fs(16),padding:frame,borderRadius:outerRadius,overflow:'hidden',boxSizing:'border-box'}}>
+		<div style={{display:'flex',flex:1,minHeight:0,flexDirection:'column',background:clipBg,borderRadius:frame?radius:0,overflow:'hidden'}}>
 			{renderHeader?renderHeader(headerBar):headerBar}
-			<div style={{display:'flex',flex:1,minHeight:0,position:'relative',overflow:'hidden'}}>
+			<div style={{display:'flex',flex:1,minHeight:0,position:'relative',overflow:'hidden',background:chrome.paper}}>
 				{packed.map(item=>{const compact=hasSecondRow&&item.rowSpan===1;const content=renderPanelCard(item.id,weather,compact,item.colSpan);return <div key={item.id} className="screen-cell" style={cellStyle(item.col,item.row,item.colSpan,item.rowSpan)}>{renderBlock?renderBlock(item.id,content):content}</div>})}
 				{empty&&addSlot?<div style={cellStyle(empty.col,empty.row,empty.colSpan,empty.rowSpan)}>{addSlot}</div>:null}
 			</div>

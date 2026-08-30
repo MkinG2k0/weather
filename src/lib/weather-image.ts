@@ -48,12 +48,7 @@ async function renderOgPng(weather: WeatherScreenData, width: number, height: nu
 export async function renderWeatherDataImage(weather: WeatherScreenData) {
 	const {width, height, colorMode} = weather.display
 	const buffer = await renderOgPng(weather, width, height)
-	try {
-		return quantizePngToPalette(buffer, colorMode)
-	} catch (error) {
-		console.error('Palette quantize failed:', error)
-		return buffer
-	}
+	return quantizePngToPalette(buffer, colorMode)
 }
 
 export function weatherImageResponse(buffer: Buffer, headers?: HeadersInit) {

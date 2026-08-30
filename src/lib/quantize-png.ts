@@ -93,27 +93,101 @@ function chunk(type: string, data: Buffer) {
 	return out
 }
 
-function encodePng(width: number, height: number, pixels: Buffer) {
-	const stride = width * 4
-	const raw = Buffer.alloc((stride + 1) * height)
-	for (let y = 0; y < height; y++) {
-		raw[y * (stride + 1)] = 0
-		pixels.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride)
-	}
+function pngFile(width: number, height: number, bitDepth: number, colorType: number, extra: Buffer[], raw: Buffer) {
 	const ihdr = Buffer.alloc(13)
 	ihdr.writeUInt32BE(width, 0)
 	ihdr.writeUInt32BE(height, 4)
-	ihdr[8] = 8
-	ihdr[9] = 6
+	ihdr[8] = bitDepth
+	ihdr[9] = colorType
 	return Buffer.concat([
 		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
 		chunk('IHDR', ihdr),
+		...extra,
 		chunk('IDAT', deflateSync(raw, {level: 9})),
 		chunk('IEND', Buffer.alloc(0)),
 	])
 }
 
-function nearest(palette: [number, number, number][], r: number, g: number, b: number) {
+function packBits(width: number, height: number, bitDepth: 1 | 2 | 4 | 8, sample: (x: number, y: number) => number) {
+	const pixelsPerByte = 8 / bitDepth
+	const rowBytes = Math.ceil(width / pixelsPerByte)
+	const raw = Buffer.alloc((rowBytes + 1) * height)
+	for (let y = 0; y < height; y++) {
+		const rowStart = y * (rowBytes + 1)
+		raw[rowStart] = 0
+		for (let x = 0; x < width; x++) {
+			const value = sample(x, y) & ((1 << bitDepth) - 1)
+			const bitPos = (x % pixelsPerByte) * bitDepth
+			raw[rowStart + 1 + Math.floor(x / pixelsPerByte)] |= value << (8 - bitDepth - bitPos)
+		}
+	}
+	return raw
+}
+
+function luminance(pixels: Buffer, i: number) {
+	return 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]
+}
+
+function ditherToBlackWhite(pixels: Buffer, width: number, height: number) {
+	const errors = new Float32Array(width * height)
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++) {
+			const i = (y * width + x) * 4
+			const old = Math.min(255, Math.max(0, luminance(pixels, i) + errors[y * width + x]))
+			const next = old < 160 ? 0 : 255
+			const err = old - next
+			pixels[i] = next
+			pixels[i + 1] = next
+			pixels[i + 2] = next
+			pixels[i + 3] = 255
+			if (x + 1 < width) errors[y * width + x + 1] += (err * 7) / 16
+			if (y + 1 < height) {
+				if (x > 0) errors[(y + 1) * width + x - 1] += (err * 3) / 16
+				errors[(y + 1) * width + x] += (err * 5) / 16
+				if (x + 1 < width) errors[(y + 1) * width + x + 1] += err / 16
+			}
+		}
+	}
+}
+
+function encodeGray1(width: number, height: number, pixels: Buffer) {
+	const raw = packBits(width, height, 1, (x, y) => (pixels[(y * width + x) * 4] >= 128 ? 1 : 0))
+	return pngFile(width, height, 1, 0, [], raw)
+}
+
+function encodeRgb8(width: number, height: number, pixels: Buffer) {
+	const stride = width * 3
+	const raw = Buffer.alloc((stride + 1) * height)
+	for (let y = 0; y < height; y++) {
+		const rowStart = y * (stride + 1)
+		raw[rowStart] = 0
+		for (let x = 0; x < width; x++) {
+			const i = (y * width + x) * 4
+			const o = rowStart + 1 + x * 3
+			raw[o] = pixels[i]
+			raw[o + 1] = pixels[i + 1]
+			raw[o + 2] = pixels[i + 2]
+		}
+	}
+	return pngFile(width, height, 8, 2, [], raw)
+}
+
+function encodeIndexed(width: number, height: number, pixels: Buffer, palette: [number, number, number][]) {
+	const bitDepth: 1 | 2 | 4 | 8 = palette.length <= 2 ? 1 : palette.length <= 4 ? 2 : palette.length <= 16 ? 4 : 8
+	const plte = Buffer.alloc(palette.length * 3)
+	for (let i = 0; i < palette.length; i++) {
+		plte[i * 3] = palette[i][0]
+		plte[i * 3 + 1] = palette[i][1]
+		plte[i * 3 + 2] = palette[i][2]
+	}
+	const raw = packBits(width, height, bitDepth, (x, y) => {
+		const i = (y * width + x) * 4
+		return nearestIndex(palette, pixels[i], pixels[i + 1], pixels[i + 2])
+	})
+	return pngFile(width, height, bitDepth, 3, [chunk('PLTE', plte)], raw)
+}
+
+function nearestIndex(palette: [number, number, number][], r: number, g: number, b: number) {
 	let best = 0
 	let bestDist = Infinity
 	for (let i = 0; i < palette.length; i++) {
@@ -124,28 +198,28 @@ function nearest(palette: [number, number, number][], r: number, g: number, b: n
 			best = i
 		}
 	}
-	return palette[best]
+	return best
 }
 
 export function quantizePngToPalette(buffer: Buffer, colorMode: ColorModeId) {
-	if (colorMode === 'rgb') return buffer
-	const palette = paletteRgb(colorMode)
 	const {width, height, pixels} = decodePng(buffer)
-	const twoColor = palette.length === 2
+	if (colorMode === 'rgb') return encodeRgb8(width, height, pixels)
+	// FireBeetle firmware keeps a 64 KB PNG buffer. 1-bit packing stays under
+	// that even with a photo card; true RGB will not.
+	if (colorMode === 'bw') {
+		ditherToBlackWhite(pixels, width, height)
+		return encodeGray1(width, height, pixels)
+	}
+	const palette = paletteRgb(colorMode)
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
 			const i = (y * width + x) * 4
-			const r = pixels[i]
-			const g = pixels[i + 1]
-			const b = pixels[i + 2]
-			const [nr, ng, nb] = twoColor
-				? (0.299 * r + 0.587 * g + 0.114 * b < 160 ? [0, 0, 0] : [255, 255, 255])
-				: nearest(palette, r, g, b)
+			const [nr, ng, nb] = palette[nearestIndex(palette, pixels[i], pixels[i + 1], pixels[i + 2])]
 			pixels[i] = nr
 			pixels[i + 1] = ng
 			pixels[i + 2] = nb
 			pixels[i + 3] = 255
 		}
 	}
-	return encodePng(width, height, pixels)
+	return encodeIndexed(width, height, pixels, palette)
 }
