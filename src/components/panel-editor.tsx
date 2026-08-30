@@ -1,12 +1,13 @@
 'use client'
 
-import {useEffect,useMemo,useRef,useState,type MouseEvent,type ReactNode} from 'react'
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,type MouseEvent,type ReactNode} from 'react'
+import {createPortal} from 'react-dom'
 import {useRouter} from 'next/navigation'
-import {closestCorners,DndContext,KeyboardSensor,PointerSensor,useSensor,useSensors,type DragEndEvent,type DragStartEvent} from '@dnd-kit/core'
-import {arrayMove,rectSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
+import {closestCorners,DndContext,KeyboardSensor,PointerSensor,useDndContext,useDndMonitor,useSensor,useSensors,type DragEndEvent,type DragStartEvent} from '@dnd-kit/core'
+import {arrayMove,sortableKeyboardCoordinates,SortableContext,useSortable,type SortingStrategy} from '@dnd-kit/sortable'
 import {WeatherScreen,renderPanelCard} from '@/components/weather-screen'
 import {buildDisplay,COLOR_MODES,COLOR_MODE_IDS,MIN_SCREEN,MAX_SCREEN,sizePresetId,SIZE_PRESETS,type ColorModeId} from '@/lib/display'
-import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartRange,getShowBorder,getShowFrame,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,withCardRange,withCardSize,withSensorChartRange,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type ScreenThemeId,type SensorConfig,type TimeRangeId} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartRange,getShowBorder,getShowFrame,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,packBlockGrid,withCardRange,withCardSize,withSensorChartRange,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type ScreenThemeId,type SensorConfig,type TimeRangeId} from '@/lib/panel-config'
 import {type SensorChartRangeId} from '@/lib/sensor-log'
 import type {WeatherScreenData} from '@/lib/weather'
 
@@ -64,13 +65,46 @@ function CardThumb({id,weather,span,rowSpan}:{id:BlockId;weather:WeatherScreenDa
 	</div>
 }
 
-function InlineSortableBlock({id,selected,onSelect,previewScale,radius,children}:{id:BlockId;selected:boolean;onSelect:()=>void;previewScale:number;radius:number;children:ReactNode}){
-	const {attributes,listeners,setNodeRef,transform,isDragging}=useSortable({id,animateLayoutChanges:()=>false})
-	const scale=Math.max(previewScale,.12)
-	const style=transform?{transform:`translate3d(${transform.x/scale}px,${transform.y/scale}px,0)`,zIndex:80,borderRadius:radius}:{borderRadius:radius}
-	return <div ref={setNodeRef} style={style} className={`inline-sortable${isDragging?' is-dragging':''}${selected?' is-selected':''}`} {...attributes} {...listeners} aria-label={`${blockNames[id]}. Перетащите, чтобы сменить место`} onClick={(event:MouseEvent)=>{event.stopPropagation();onSelect()}}>
+const stayPutStrategy:SortingStrategy=()=>null
+
+function InlineSortableBlock({id,selected,onSelect,radius,children}:{id:BlockId;selected:boolean;onSelect:()=>void;radius:number;children:ReactNode}){
+	const {attributes,listeners,setNodeRef,isDragging,isOver}=useSortable({id,animateLayoutChanges:()=>false})
+	return <div ref={setNodeRef} style={{borderRadius:radius}} className={`inline-sortable${isDragging?' is-dragging':''}${isOver&&!isDragging?' is-drop-over':''}${selected?' is-selected':''}`} {...attributes} {...listeners} aria-label={`${blockNames[id]}. Перетащите, чтобы сменить место`} onClick={(event:MouseEvent)=>{event.stopPropagation();onSelect()}}>
 		<div className="inline-card-content">{children}</div>
 	</div>
+}
+
+function LiveCardDrag({weather,previewScale,radius}:{weather:WeatherScreenData;previewScale:number;radius:number}){
+	const {active,activeNode,activeNodeRect}=useDndContext()
+	const [origin,setOrigin]=useState<{left:number;top:number;width:number;height:number}|null>(null)
+	const [delta,setDelta]=useState({x:0,y:0})
+	useLayoutEffect(()=>{
+		if(!active){setOrigin(null);setDelta({x:0,y:0});return}
+		setOrigin(prev=>{
+			if(prev)return prev
+			const box=activeNode?.getBoundingClientRect()
+			if(box&&box.width&&box.height)return {left:box.left,top:box.top,width:box.width,height:box.height}
+			if(activeNodeRect)return {left:activeNodeRect.left,top:activeNodeRect.top,width:activeNodeRect.width,height:activeNodeRect.height}
+			return prev
+		})
+	},[active,activeNode,activeNodeRect])
+	useDndMonitor({
+		onDragMove(event){setDelta({x:event.delta.x,y:event.delta.y})},
+		onDragEnd(){setOrigin(null);setDelta({x:0,y:0})},
+		onDragCancel(){setOrigin(null);setDelta({x:0,y:0})},
+	})
+	if(!active||!origin||typeof document==='undefined')return null
+	const id=active.id as BlockId
+	const packed=packBlockGrid(weather.layout)??[]
+	const item=packed.find(entry=>entry.id===id)
+	const compact=Math.max(1,...packed.map(entry=>entry.row+entry.rowSpan-1))>1&&(item?.rowSpan??1)===1
+	const span=item?.colSpan??1
+	const scale=Math.max(previewScale,.12)
+	return createPortal(<div className="drag-ghost" style={{left:origin.left+delta.x,top:origin.top+delta.y,width:origin.width,height:origin.height,borderRadius:radius}}>
+		<div className="drag-ghost-stage" style={{width:origin.width/scale,height:origin.height/scale,transform:`scale(${scale})`}}>
+			<div style={{display:'flex',width:'100%',height:'100%'}}>{renderPanelCard(id,weather,compact,span)}</div>
+		</div>
+	</div>,document.body)
 }
 
 export function PanelEditor({initialPanel,initialWeather,origin,username}:{initialPanel:EditablePanel;initialWeather:WeatherScreenData;origin:string;username:string}){
@@ -78,7 +112,6 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const [cities,setCities]=useState<City[]>([]);const [searching,setSearching]=useState(false);const [searchAttempted,setSearchAttempted]=useState(false);const [locating,setLocating]=useState(false);const [cityError,setCityError]=useState('');const [previewLoading,setPreviewLoading]=useState(false)
 	const [message,setMessage]=useState('');const [saving,setSaving]=useState(false);const [previewScale,setPreviewScale]=useState(1);const previewHost=useRef<HTMLDivElement>(null);const previewStage=useRef<HTMLDivElement>(null)
 	const [selectedId,setSelectedId]=useState<BlockId|null>(null);const [selectedHeader,setSelectedHeader]=useState(false);const [adding,setAdding]=useState(false)
-	const [dragId,setDragId]=useState<BlockId|null>(null)
 	const [customSize,setCustomSize]=useState(()=>sizePresetId(initialPanel.screenWidth,initialPanel.screenHeight)==='custom')
 	const photoInput=useRef<HTMLInputElement>(null)
 	const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
@@ -112,13 +145,11 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	useEffect(()=>{if(selectedId&&!panel.layout.blocks.includes(selectedId))setSelectedId(panel.layout.blocks[0]??null)},[panel.layout.blocks,selectedId])
 
 	const unusedBlocks=useMemo(()=>BLOCK_IDS.filter(id=>!panel.layout.blocks.includes(id)),[panel.layout.blocks])
-	function clearDrag(){setDragId(null)}
 	function onDragStart(event:DragStartEvent){
 		const id=event.active.id as BlockId
-		setDragId(id);setSelectedId(id);setAdding(false);setSelectedHeader(false)
+		setSelectedId(id);setAdding(false);setSelectedHeader(false)
 	}
 	function onDragEnd(event:DragEndEvent){
-		clearDrag()
 		const active=event.active.id as BlockId;const over=event.over?.id as BlockId|undefined;if(!over||active===over)return
 		const oldIndex=panel.layout.blocks.indexOf(active);const newIndex=panel.layout.blocks.indexOf(over)
 		const layout={...panel.layout,blocks:arrayMove(panel.layout.blocks,oldIndex,newIndex)}
@@ -190,6 +221,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const empty=adding?findEmptySlot(panel.layout):null
 	const catalogSpan=adding?(empty?.colSpan??1):selectedSpan
 	const catalogRowSpan=adding?1:selectedRowSpan
+	const overlayRadius=getCornerRadius(panel.layout)
 
 	return <main className="desk-shell"><header className="desk-header"><div><p className="eyebrow">E‑INK CONTROL DESK</p><h1>{panel.name}</h1></div><div className="header-actions"><span className="user-chip">{username}</span><button className="text-button" onClick={logout}>Выйти</button></div></header>
 		<div className="desk-grid"><aside className="control-rail">
@@ -219,9 +251,14 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 		</aside><section className="preview-area" onClick={()=>{setAdding(false);setSelectedId(null);setSelectedHeader(false)}}>
 			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b><small className="layout-hint">Карточки можно перетаскивать. Удаление — в настройках выбранной карточки.</small></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="preview-stage" ref={previewStage}>
-			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className={`screen-bezel component-host${dragId?' is-reordering':''}`} ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}><div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={clearDrag}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} style={{overflow:'hidden',flexShrink:0}} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} previewScale={previewScale} radius={getCornerRadius(panel.layout)} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" style={{borderRadius:getCornerRadius(panel.layout)}} onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
-			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>{panel.screenWidth}×{panel.screenHeight}</span><i/><span>{colorMeta.colors?`${colorMeta.colors}C`:'RGB'}</span></div></div>
+			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className="screen-bezel component-host" ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}>
+				<DndContext sensors={sensors} collisionDetection={closestCorners} autoScroll={false} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+					<div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
+						<SortableContext items={panel.layout.blocks} strategy={stayPutStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} style={{overflow:'hidden',flexShrink:0}} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} radius={overlayRadius} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" style={{borderRadius:overlayRadius}} onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext>
+					</div>
+					<LiveCardDrag weather={previewWeather} previewScale={previewScale} radius={overlayRadius}/>
+				</DndContext>
+			{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>{panel.screenWidth}×{panel.screenHeight}</span><i/><span>{colorMeta.colors?`${colorMeta.colors}C`:'RGB'}</span></div></div>
 			{(selected||adding||selectedHeader)&&<aside className="card-inspector" onClick={event=>event.stopPropagation()}>
 				{selectedHeader?<>
 					<div className="inspector-kicker">Шапка экрана</div>
