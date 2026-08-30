@@ -3,23 +3,33 @@
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react'
 import {useRouter} from 'next/navigation'
 import {closestCenter,DndContext,KeyboardSensor,PointerSensor,useSensor,useSensors,type DragEndEvent} from '@dnd-kit/core'
-import {arrayMove,horizontalListSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
+import {arrayMove,rectSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
 import {CSS} from '@dnd-kit/utilities'
 import {WeatherScreen} from '@/components/weather-screen'
-import {BLOCK_IDS,MAX_BLOCKS,type BlockId,type EditablePanel} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_SPANS,MAX_BLOCKS,getCardSpan,getDefaultCardSpan,layoutFits,type BlockId,type CardSpan,type EditablePanel} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
-const blockNames:Record<BlockId,string>={current:'Температура',forecast:'Прогноз',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Осадки',metrics:'Показатели',wind:'Ветер',sun:'Солнце',clouds:'Облачность'}
+const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз на 7 дней',weekStrip:'Неделя · иконки',weekTiles:'Неделя · плитки',weekRange:'Неделя · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик BMP280'}
+const blockGroups:{label:string;ids:BlockId[]}[]=[
+	{label:'Главное',ids:['current','overview','weatherScene','clock','metrics']},
+	{label:'Прогнозы и графики',ids:['forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart']},
+	{label:'Атмосфера',ids:['feels','humidity','pressure','visibility','dewPoint','airQuality']},
+	{label:'Осадки, ветер и облака',ids:['precipitation','precipitationDetail','wind','clouds','cloudLayers']},
+	{label:'Солнце',ids:['sun','daylight','uv','radiation']},
+	{label:'Устройство',ids:['photo','sensor']},
+]
+function BlockOptions({allowed}:{allowed:BlockId[]}){const set=new Set(allowed);return <>{blockGroups.map(group=>{const ids=group.ids.filter(id=>set.has(id));return ids.length?<optgroup key={group.label} label={group.label}>{ids.map(id=><option key={id} value={id}>{blockNames[id]}</option>)}</optgroup>:null})}</>}
 const refreshPresets=[5,10,15,30,60,180,360,720,1440]
 
-function InlineSortableBlock({id,blocks,onReplace,onRemove,children}:{id:BlockId;blocks:BlockId[];onReplace:(from:BlockId,to:BlockId)=>void;onRemove:(id:BlockId)=>void;children:ReactNode}){
+function InlineSortableBlock({id,blocks,span,canResize,onReplace,onResize,onRemove,children}:{id:BlockId;blocks:BlockId[];span:CardSpan;canResize:(span:CardSpan)=>boolean;onReplace:(from:BlockId,to:BlockId)=>void;onResize:(id:BlockId,span:CardSpan)=>void;onRemove:(id:BlockId)=>void;children:ReactNode}){
 	const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id})
 	const alternatives=BLOCK_IDS.filter(candidate=>candidate===id||!blocks.includes(candidate))
-	return <div ref={setNodeRef} className={`inline-sortable${isDragging?' is-dragging':''}`} style={{transform:CSS.Transform.toString(transform),transition}}>
+	return <div ref={setNodeRef} className={`inline-sortable${isDragging?' is-dragging':''}`} style={{transform:CSS.Translate.toString(transform),transition}}>
 		<div className="card-edit-bar">
 			<button className="inline-drag-handle" type="button" aria-label={`Переместить ${blockNames[id]}`} {...attributes} {...listeners}>⠿</button>
-			<select aria-label="Тип блока" value={id} onChange={event=>onReplace(id,event.target.value as BlockId)}>{alternatives.map(type=><option key={type} value={type}>{blockNames[type]}</option>)}</select>
+			<select aria-label="Тип блока" value={id} onChange={event=>onReplace(id,event.target.value as BlockId)}><BlockOptions allowed={alternatives}/></select>
+			<select className="card-size-select" aria-label={`Ширина ${blockNames[id]}`} value={span} onChange={event=>onResize(id,Number(event.target.value) as CardSpan)}>{CARD_SPANS.map(value=><option key={value} value={value} disabled={!canResize(value)}>{value}/4</option>)}</select>
 			<button className="inline-remove" type="button" onClick={()=>onRemove(id)} disabled={blocks.length===1} aria-label={`Удалить ${blockNames[id]}`}>×</button>
 		</div>
 		<div className="inline-card-content">{children}</div>
@@ -40,15 +50,18 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 		return()=>{clearTimeout(timer);controller.abort()}
 	},[cityQuery,panel.cityName])
 	useEffect(()=>{
-		const controller=new AbortController();const timer=setTimeout(async()=>{setPreviewLoading(true);try{const response=await fetch('/api/panel/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(panel),signal:controller.signal});if(response.ok)setWeather(await response.json())}finally{if(!controller.signal.aborted)setPreviewLoading(false)}},300)
+		const controller=new AbortController();const timer=setTimeout(async()=>{setPreviewLoading(true);try{const response=await fetch('/api/panel/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(panel),signal:controller.signal});if(response.ok)setWeather(await response.json())}catch(error){if(!controller.signal.aborted)console.error('Preview update failed',error)}finally{if(!controller.signal.aborted)setPreviewLoading(false)}},300)
 		return()=>{clearTimeout(timer);controller.abort()}
 	},[panel])
 
 	const unusedBlocks=useMemo(()=>BLOCK_IDS.filter(id=>!panel.layout.blocks.includes(id)),[panel.layout.blocks])
-	function onDragEnd(event:DragEndEvent){const active=event.active.id as BlockId;const over=event.over?.id as BlockId|undefined;if(!over||active===over)return;const oldIndex=panel.layout.blocks.indexOf(active);const newIndex=panel.layout.blocks.indexOf(over);setPanel({...panel,layout:{...panel.layout,blocks:arrayMove(panel.layout.blocks,oldIndex,newIndex)}})}
-	function replaceBlock(from:BlockId,to:BlockId){setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.map(id=>id===from?to:id)}})}
-	function removeBlock(id:BlockId){if(panel.layout.blocks.length===1)return;setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.filter(item=>item!==id)}})}
-	function addBlock(id:BlockId){if(panel.layout.blocks.length>=MAX_BLOCKS||panel.layout.blocks.includes(id))return;setPanel({...panel,layout:{...panel.layout,blocks:[...panel.layout.blocks,id]}})}
+	function withSpan(id:BlockId,span:CardSpan){return {...panel.layout,spans:{...panel.layout.spans,[id]:span}}}
+	function onDragEnd(event:DragEndEvent){const active=event.active.id as BlockId;const over=event.over?.id as BlockId|undefined;if(!over||active===over)return;const oldIndex=panel.layout.blocks.indexOf(active);const newIndex=panel.layout.blocks.indexOf(over);const layout={...panel.layout,blocks:arrayMove(panel.layout.blocks,oldIndex,newIndex)};if(layoutFits(layout))setPanel({...panel,layout});else setMessage('В таком порядке карточки не помещаются в два ряда.')}
+	function replaceBlock(from:BlockId,to:BlockId){if(from===to)return;const spans={...panel.layout.spans};const span=spans[from];delete spans[from];if(span)spans[to]=span;setPanel({...panel,layout:{blocks:panel.layout.blocks.map(id=>id===from?to:id),spans}})}
+	function resizeBlock(id:BlockId,span:CardSpan){const layout=withSpan(id,span);if(layoutFits(layout))setPanel({...panel,layout})}
+	function removeBlock(id:BlockId){if(panel.layout.blocks.length===1)return;const spans={...panel.layout.spans};delete spans[id];setPanel({...panel,layout:{blocks:panel.layout.blocks.filter(item=>item!==id),spans}})}
+	function layoutWithAdded(id:BlockId){const preferred=getDefaultCardSpan(id);const withPreferred={...panel.layout,blocks:[...panel.layout.blocks,id],spans:{...panel.layout.spans,...(preferred===1?{}:{[id]:preferred})}};if(layoutFits(withPreferred))return withPreferred;const fallback={...panel.layout,blocks:[...panel.layout.blocks,id]};return layoutFits(fallback)?fallback:null}
+	function addBlock(id:BlockId){if(panel.layout.blocks.length>=MAX_BLOCKS||panel.layout.blocks.includes(id))return;const layout=layoutWithAdded(id);if(layout)setPanel({...panel,layout});else setMessage('На экране не осталось места для этой карточки.')}
 	function chooseCity(city:City){setPanel({...panel,cityName:city.name,latitude:city.latitude,longitude:city.longitude,timezone:city.timezone});setCityQuery(city.name);setCities([]);setSearchAttempted(false);setCityError('')}
 	async function locateCity(){
 		setCityError('');setLocating(true)
@@ -67,6 +80,8 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	async function logout(){await fetch('/api/auth/logout',{method:'POST'});router.refresh()}
 	const previewWeather={...weather,layout:panel.layout}
 	const refreshValue=refreshPresets.includes(panel.refreshMinutes)?String(panel.refreshMinutes):'custom'
+	const addableBlocks=unusedBlocks.filter(id=>layoutWithAdded(id)!==null)
+	const canAddCard=panel.layout.blocks.length<MAX_BLOCKS&&addableBlocks.length>0
 
 	return <main className="desk-shell"><header className="desk-header"><div><p className="eyebrow">E‑INK CONTROL DESK</p><h1>{panel.name}</h1></div><div className="header-actions"><span className="user-chip">{username}</span><button className="text-button" onClick={logout}>Выйти</button></div></header>
 		<div className="desk-grid"><aside className="control-rail">
@@ -81,9 +96,9 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 			</section>
 			<section className="control-section link-section"><div className="section-heading"><span>02</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
 			<div className="save-dock"><button className="primary-button" onClick={save} disabled={saving}>{saving?'Сохраняем…':'Сохранить изменения'}</button>{message&&<p className="save-message" role="status">{message}</p>}</div>
-		</aside><section className="preview-area"><div className="preview-label"><div><span>EDIT ON SCREEN</span><b>До 4 карточек · тяните, меняйте тип или удаляйте</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
+		</aside><section className="preview-area"><div className="preview-label"><div><span>EDIT ON SCREEN</span><b>29 типов карточек · датчик BMP280 · до 2 рядов</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="device-frame"><div className="screen-bezel component-host" ref={previewHost} style={{height:480*previewScale+16}}><div className="component-preview" style={{transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={horizontalListSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} blocks={panel.layout.blocks} onReplace={replaceBlock} onRemove={removeBlock}>{content}</InlineSortableBlock>} addSlot={panel.layout.blocks.length<MAX_BLOCKS&&unusedBlocks.length>0?<div className="inline-add-slot"><select aria-label="Добавить блок" value="" onChange={e=>{if(e.target.value)addBlock(e.target.value as BlockId)}}><option value="">+ Добавить блок</option>{unusedBlocks.map(id=><option key={id} value={id}>{blockNames[id]}</option>)}</select></div>:undefined}/></SortableContext></DndContext>
+				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} blocks={panel.layout.blocks} span={getCardSpan(panel.layout,id)} canResize={span=>layoutFits(withSpan(id,span))} onReplace={replaceBlock} onResize={resizeBlock} onRemove={removeBlock}>{content}</InlineSortableBlock>} addSlot={canAddCard?<div className="inline-add-slot"><select aria-label="Добавить блок" value="" onChange={e=>{if(e.target.value)addBlock(e.target.value as BlockId)}}><option value="">+ Добавить карточку</option><BlockOptions allowed={addableBlocks}/></select></div>:undefined}/></SortableContext></DndContext>
 			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>FPC‑8612</span><i/><span>SPI / 7.5″</span></div></div>
 			<div className="endpoint-strip"><div><span>CONFIG</span><code>{baseUrl}/config</code></div><button onClick={()=>copy(`${baseUrl}/config`)}>Копировать</button></div>
 		</section></div>

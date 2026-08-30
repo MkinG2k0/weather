@@ -1,6 +1,6 @@
 import {z} from 'zod'
 import {getCurrentUser} from '@/lib/auth'
-import {BLOCK_IDS,MAX_BLOCKS} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS,layoutFits,type PanelLayout} from '@/lib/panel-config'
 import {serializePanel} from '@/lib/panel-data'
 import {prisma} from '@/lib/prisma'
 
@@ -15,7 +15,9 @@ const schema = z.object({
 	refreshMinutes: z.number().int().min(5).max(1440),
 	layout: z.object({
 		blocks: z.array(z.enum(BLOCK_IDS)).min(1).max(MAX_BLOCKS).refine(items=>new Set(items).size===items.length,'Блоки не должны повторяться'),
-	}),
+		spans: z.record(z.string(),z.number().int().min(1).max(4)).refine(value=>Object.keys(value).every(id=>BLOCK_IDS.includes(id as typeof BLOCK_IDS[number])),'Неизвестная карточка'),
+		photoDataUrl:z.string().max(1_500_000).regex(/^data:image\/(?:png|jpeg|webp);base64,/).optional(),
+	}).refine(value=>layoutFits(value as PanelLayout),'Карточки не помещаются в два ряда'),
 })
 
 export async function PATCH(request: Request) {

@@ -1,4 +1,6 @@
 import {createHash} from 'node:crypto'
+import {parseDeviceSensor} from '@/lib/device-sensor'
+import {normalizeLayout} from '@/lib/panel-config'
 import {prisma} from '@/lib/prisma'
 import {getWeatherScreenData} from '@/lib/weather'
 import {renderWeatherDataImage,weatherImageResponse} from '@/lib/weather-image'
@@ -24,6 +26,10 @@ export async function GET(request:Request,{params}:{params:Promise<{slug:string}
 		const panel=await prisma.weatherPanel.findUnique({where:{slug}})
 		if(!panel) return Response.json({error:'Device not found'},{status:404})
 		const weather=await getWeatherScreenData(panel)
+		const layout=normalizeLayout(panel.layout)
+		weather.sensor=layout.blocks.includes('sensor')
+			? parseDeviceSensor(request.url, panel.unitSystem)
+			: null
 		const etag=`"${createHash('sha256').update(JSON.stringify(weather)).digest('hex')}"`
 		const responseHeaders={
 			'Cache-Control':'no-store',
