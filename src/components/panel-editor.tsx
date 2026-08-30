@@ -11,12 +11,12 @@ import {type SensorChartRangeId} from '@/lib/sensor-log'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
-const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз по дням',weekStrip:'Дни · иконки',weekTiles:'Дни · плитки',weekRange:'Дни · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик',sensorChart:'График датчика'}
+const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз по дням',weekStrip:'Дни · иконки',weekTiles:'Дни · плитки',weekRange:'Дни · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик',sensorChart:'График температуры датчика'}
 const rangePips:{id:TimeRangeId;label:string}[]=[{id:'day',label:'День'},{id:'days3',label:'3 дня'},{id:'week',label:'Нед'},{id:'weeks2',label:'2 нед'},{id:'month',label:'Мес'}]
-const sensorRangePips:{id:SensorChartRangeId;label:string}[]=[{id:'hour',label:'1ч'},{id:'hours3',label:'3ч'},{id:'hours6',label:'6ч'},{id:'hours12',label:'12ч'},{id:'hours23',label:'23ч'},{id:'days3',label:'3дн'},{id:'week',label:'Нед'},{id:'month',label:'Мес'}]
+const sensorRangePips:{id:SensorChartRangeId;label:string}[]=[{id:'hour',label:'1ч'},{id:'hours3',label:'3ч'},{id:'hours6',label:'6ч'},{id:'hours12',label:'12ч'},{id:'hours24',label:'24ч'},{id:'days3',label:'3дн'},{id:'week',label:'Нед'},{id:'month',label:'Мес'}]
 const blockGroups:{label:string;ids:BlockId[]}[]=[
 	{label:'Главное',ids:['current','overview','weatherScene','clock','metrics']},
-	{label:'Прогнозы и графики',ids:['forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart']},
+	{label:'Прогнозы и графики',ids:['forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','sensorChart','precipitationChart','windChart']},
 	{label:'Атмосфера',ids:['feels','humidity','pressure','visibility','dewPoint','airQuality']},
 	{label:'Осадки, ветер и облака',ids:['precipitation','precipitationDetail','wind','clouds','cloudLayers']},
 	{label:'Солнце',ids:['sun','daylight','uv','radiation']},
@@ -264,7 +264,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 				</div>}
 				{selected==='sensorChart'&&!adding&&<div className="size-board">
 					<div><span>Диапазон</span><div className="size-pips range-pips">{sensorRangePips.map(item=><button key={item.id} type="button" className={getSensorChartRange(panel.layout)===item.id?'is-on':''} onClick={()=>setPanel({...panel,layout:withSensorChartRange(panel.layout,item.id)})}>{item.label}</button>)}</div></div>
-					<p className="range-hint">История с BMP/BME на устройстве. На сервере хранится максимум месяц. В превью — демо, пока панель не получит данные с ESP32.</p>
+					<p className="range-hint">Температура BMP/BME с платы. История копится на сервере без срока. В превью — демо, пока ESP32 не пришлёт свои точки.</p>
 				</div>}
 				{selected&&!adding&&isRangeBlock(selected)&&<div className="size-board">
 					<div><span>Диапазон</span><div className="size-pips range-pips">{rangePips.map(item=><button key={item.id} type="button" className={getCardRange(panel.layout,selected)===item.id?'is-on':''} onClick={()=>setPanel({...panel,layout:withCardRange(panel.layout,selected,item.id)})}>{item.label}</button>)}</div></div>

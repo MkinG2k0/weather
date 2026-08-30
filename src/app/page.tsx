@@ -19,10 +19,8 @@ export default async function Home(){
 	if(!panel)throw new Error('Weather panel is missing')
 	const weather=await getWeatherScreenData(panel)
 	if(weather.layout.blocks.includes('sensor'))weather.sensor=demoDeviceSensor(panel.unitSystem)
-	if(weather.layout.blocks.includes('sensorChart')){
-		const stored=parseSensorLog(panel.sensorLog)
-		weather.sensorTempLog=stored.length?stored:demoSensorLog()
-	}
+	const stored=parseSensorLog(panel.sensorLog)
+	weather.sensorTempLog=stored.length?stored:demoSensorLog()
 	weather.batteryPercent=demoDeviceBatteryPercent()
 	const requestHeaders=await headers()
 	const protocol=requestHeaders.get('x-forwarded-proto')??'http'

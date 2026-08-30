@@ -30,7 +30,7 @@ const schema = z.object({
 		showFrame:z.boolean().optional(),
 		sensor:z.object({pressure:z.boolean(),altitude:z.boolean(),humidity:z.boolean()}).optional(),
 		ranges:z.record(z.string(),z.enum(['day','days3','week','weeks2','month'])).optional(),
-		sensorChartRange:z.enum(['hour','hours3','hours6','hours12','hours23','days3','week','month']).optional(),
+		sensorChartRange:z.enum(['hour','hours3','hours6','hours12','hours23','hours24','days3','week','month']).optional(),
 		header:z.object({
 			visible:z.boolean(),
 			showCity:z.boolean(),
@@ -56,7 +56,7 @@ export async function PATCH(request: Request) {
 		if (!panel) return Response.json({error: 'Панель не найдена'}, {status: 404})
 		const updated = await prisma.weatherPanel.update({where: {id: panel.id}, data: {
 			...rest,
-			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize), theme: normalizeScreenTheme(layout.theme), cornerRadius: normalizeCornerRadius(layout.cornerRadius), cardGap: normalizeCardGap(layout.cardGap), showBorder: normalizeShowBorder(layout.showBorder), showFrame: normalizeShowFrame(layout.showFrame), sensor: normalizeSensor(layout.sensor), sensorChartRange: layout.sensorChartRange},
+			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize), theme: normalizeScreenTheme(layout.theme), cornerRadius: normalizeCornerRadius(layout.cornerRadius), cardGap: normalizeCardGap(layout.cardGap), showBorder: normalizeShowBorder(layout.showBorder), showFrame: normalizeShowFrame(layout.showFrame), sensor: normalizeSensor(layout.sensor), sensorChartRange: layout.sensorChartRange==='hours23'?'hours24':layout.sensorChartRange},
 		}})
 		return Response.json(serializePanel(updated))
 	} catch (error) {

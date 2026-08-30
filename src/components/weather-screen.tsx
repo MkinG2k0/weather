@@ -228,7 +228,7 @@ function chartSeries(weather:WeatherScreenData,id:BlockId){
 function TemperatureChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const series=chartSeries(weather,'temperatureChart');return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${isRu(weather)?'ТЕМПЕРАТУРА':'TEMPERATURE'} · ${rangeCaption(series.days,isRu(weather))}`}</CardTitle><SparkChart {...chartColors(weather)} values={series.temps} secondary={series.feels} labels={series.labels} unit="°"/></div>}
 function sensorChartTick(unix:number,timezone:string,hours:number,ru:boolean){
 	const date=new Date(unix*1000)
-	if(hours<=23)return new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(date)
+	if(hours<=24)return new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(date)
 	if(hours<=72)return new Intl.DateTimeFormat(ru?'ru-RU':'en-GB',{timeZone:timezone,weekday:'short',hour:'2-digit',hour12:false}).format(date).toUpperCase()
 	return new Intl.DateTimeFormat(ru?'ru-RU':'en-GB',{timeZone:timezone,day:'2-digit',month:'short'}).format(date).toUpperCase()
 }
@@ -238,9 +238,9 @@ function SensorChartCard({weather,compact}:{weather:WeatherScreenData;compact:bo
 	const hours=SENSOR_CHART_HOURS[range]
 	const caption=SENSOR_CHART_CAPTIONS[range][ru?'ru':'en']
 	const sliced=downsampleSensorLog(sliceSensorLog(weather.sensorTempLog??[],hours),compact?12:24)
-	if(!sliced.length)return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ДАТЧИК · ТЕМП.':'SENSOR · TEMP'} · ${caption}`}</CardTitle><div style={{...text(compact?11:14),marginTop:8}}>{ru?'НЕТ ЗАПИСЕЙ':'NO SAMPLES YET'}</div></div>
+	if(!sliced.length)	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ТЕМП. ДАТЧИКА':'SENSOR TEMP'} · ${caption}`}</CardTitle><div style={{...text(compact?11:14),marginTop:8}}>{ru?'НЕТ ЗАПИСЕЙ':'NO SAMPLES YET'}</div></div>
 	const toDisplay=(celsius:number)=>weather.temperatureUnit==='°F'?celsius*9/5+32:celsius
-	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ДАТЧИК · ТЕМП.':'SENSOR · TEMP'} · ${caption}`}</CardTitle><SparkChart {...chartColors(weather)} values={sliced.map(point=>toDisplay(point.c))} labels={sliced.map(point=>sensorChartTick(point.t,weather.timezone,hours,ru))} unit="°"/></div>
+	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ТЕМП. ДАТЧИКА':'SENSOR TEMP'} · ${caption}`}</CardTitle><SparkChart {...chartColors(weather)} values={sliced.map(point=>toDisplay(point.c))} labels={sliced.map(point=>sensorChartTick(point.t,weather.timezone,hours,ru))} unit="°"/></div>
 }
 function PrecipitationChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const series=chartSeries(weather,'precipitationChart');return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${isRu(weather)?'ОСАДКИ':'PRECIPITATION'} · ${rangeCaption(series.days,isRu(weather))}`}</CardTitle><SparkChart {...chartColors(weather)} values={series.precip} labels={series.labels} unit="%" bars/></div>}
 function WindChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const series=chartSeries(weather,'windChart');return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${weather.labels.wind} · ${rangeCaption(series.days,isRu(weather))}`}</CardTitle><SparkChart {...chartColors(weather)} values={series.wind} secondary={series.gust} labels={series.labels} unit={weather.windUnit}/></div>}

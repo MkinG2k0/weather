@@ -1,5 +1,5 @@
 import {normalizeDisplay, type ColorModeId} from './display'
-import {DEFAULT_SENSOR_CHART_RANGE, isSensorChartRange, type SensorChartRangeId} from './sensor-log'
+import {DEFAULT_SENSOR_CHART_RANGE, parseSensorChartRange, type SensorChartRangeId} from './sensor-log'
 
 export const BLOCK_IDS = [
 	'current','overview','photo','weatherScene','clock','forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart',
@@ -108,7 +108,7 @@ export const DEFAULT_CARD_RANGE: Record<RangeBlockId, TimeRangeId> = {
 export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;sensorChartRange?:SensorChartRangeId;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;showFrame?:boolean;header?:HeaderConfig;sensor?:SensorConfig}
 
 export function getSensorChartRange(layout:PanelLayout):SensorChartRangeId{
-	return isSensorChartRange(layout.sensorChartRange)?layout.sensorChartRange:DEFAULT_SENSOR_CHART_RANGE
+	return parseSensorChartRange(layout.sensorChartRange)
 }
 
 export function withSensorChartRange(layout:PanelLayout,range:SensorChartRangeId):PanelLayout{
@@ -306,7 +306,8 @@ export function normalizeLayout(value:unknown):PanelLayout{
 	const cardGap=normalizeCardGap(source.cardGap)
 	const showBorder=normalizeShowBorder(source.showBorder)
 	const showFrame=normalizeShowFrame(source.showFrame)
-	const sensorChartRange=isSensorChartRange(source.sensorChartRange)&&source.sensorChartRange!==DEFAULT_SENSOR_CHART_RANGE?source.sensorChartRange:undefined
+	const parsedRange=parseSensorChartRange(source.sensorChartRange)
+	const sensorChartRange=parsedRange!==DEFAULT_SENSOR_CHART_RANGE?parsedRange:undefined
 	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(sensorChartRange?{sensorChartRange}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,showFrame,sensor,...(header?{header}:{})}
 	const layout:PanelLayout={blocks:normalizedBlocks,spans,...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}

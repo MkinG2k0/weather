@@ -1,14 +1,19 @@
 export type SensorTempPoint = {t:number;c:number}
 
-export const SENSOR_CHART_RANGES = ['hour','hours3','hours6','hours12','hours23','days3','week','month'] as const
+export const SENSOR_CHART_RANGES = ['hour','hours3','hours6','hours12','hours24','days3','week','month'] as const
 export type SensorChartRangeId = (typeof SENSOR_CHART_RANGES)[number]
-export const DEFAULT_SENSOR_CHART_RANGE: SensorChartRangeId = 'hours23'
+export const DEFAULT_SENSOR_CHART_RANGE: SensorChartRangeId = 'hours24'
 export const SENSOR_CHART_HOURS: Record<SensorChartRangeId, number> = {
-	hour:1, hours3:3, hours6:6, hours12:12, hours23:23, days3:72, week:168, month:24*31,
+	hour:1, hours3:3, hours6:6, hours12:12, hours24:24, days3:72, week:168, month:24*31,
 }
 
 export function isSensorChartRange(value:unknown):value is SensorChartRangeId{
 	return typeof value==='string'&&(SENSOR_CHART_RANGES as readonly string[]).includes(value)
+}
+
+export function parseSensorChartRange(value:unknown):SensorChartRangeId{
+	if(value==='hours23'||value==='hours24')return 'hours24'
+	return isSensorChartRange(value)?value:DEFAULT_SENSOR_CHART_RANGE
 }
 
 export function parseSensorLog(value:unknown):SensorTempPoint[]{
@@ -76,7 +81,7 @@ export const SENSOR_CHART_CAPTIONS: Record<SensorChartRangeId,{ru:string;en:stri
 	hours3:{ru:'3 Ч',en:'3H'},
 	hours6:{ru:'6 Ч',en:'6H'},
 	hours12:{ru:'12 Ч',en:'12H'},
-	hours23:{ru:'23 Ч',en:'23H'},
+	hours24:{ru:'24 Ч',en:'24H'},
 	days3:{ru:'3 ДНЯ',en:'3 DAYS'},
 	week:{ru:'НЕДЕЛЯ',en:'WEEK'},
 	month:{ru:'МЕСЯЦ',en:'MONTH'},
