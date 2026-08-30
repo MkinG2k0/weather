@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto'
 import {parseDeviceBatteryPercent,parseDeviceSensor} from '@/lib/device-sensor'
-import {getCacheScreen,normalizeLayout} from '@/lib/panel-config'
+import {getCacheScreen,getQuietHours,nextRefreshSeconds,normalizeLayout} from '@/lib/panel-config'
 import {prisma} from '@/lib/prisma'
 import {incomingSensorPoints, mergeSensorLog} from '@/lib/sensor-log'
 import {getWeatherScreenData} from '@/lib/weather'
@@ -9,17 +9,6 @@ import {renderWeatherDataImage,weatherImageResponse} from '@/lib/weather-image'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-
-function localHour(timezone:string) {
-	const hour=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',hour12:false}).format(new Date())
-	return Number.parseInt(hour,10)%24
-}
-
-function nextRefreshSeconds(refreshMinutes:number,timezone:string) {
-	const regularSeconds=refreshMinutes*60
-	const hour=localHour(timezone)
-	return hour>=23||hour<6 ? Math.max(regularSeconds,60*60) : regularSeconds
-}
 
 function localObservedAt(timezone:string) {
 	const parts=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date())
@@ -49,7 +38,7 @@ export async function GET(request:Request,{params}:{params:Promise<{slug:string}
 		const etag=`"${createHash('sha256').update(JSON.stringify(weather)).digest('hex')}"`
 		const responseHeaders={
 			'Cache-Control':'no-store',
-			'X-Next-Refresh-Seconds':String(nextRefreshSeconds(panel.refreshMinutes,panel.timezone)),
+			'X-Next-Refresh-Seconds':String(nextRefreshSeconds(panel.refreshMinutes,panel.timezone,getQuietHours(layout))),
 			...(cacheScreen?{ETag:etag}:{}),
 		}
 		if(cacheScreen&&request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers:responseHeaders})

@@ -7,7 +7,7 @@ import {closestCorners,DndContext,KeyboardSensor,PointerSensor,useDndContext,use
 import {arrayMove,sortableKeyboardCoordinates,SortableContext,useSortable,type SortingStrategy} from '@dnd-kit/sortable'
 import {WeatherScreen,renderPanelCard} from '@/components/weather-screen'
 import {buildDisplay,COLOR_MODES,COLOR_MODE_IDS,MIN_SCREEN,MAX_SCREEN,sizePresetId,SIZE_PRESETS,type ColorModeId} from '@/lib/display'
-import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCacheScreen,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartFilter,getSensorChartRange,getShowBorder,getShowFrame,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,packBlockGrid,withCardRange,withCardSize,withSensorChartFilter,withSensorChartRange,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type ScreenThemeId,type SensorConfig,type TimeRangeId} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCacheScreen,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getQuietHours,getScreenTheme,getSensor,getSensorChartFilter,getSensorChartRange,getShowBorder,getShowFrame,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,packBlockGrid,withCardRange,withCardSize,withSensorChartFilter,withSensorChartRange,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type QuietHours,type ScreenThemeId,type SensorConfig,type TimeRangeId} from '@/lib/panel-config'
 import {type SensorChartFilterId, type SensorChartRangeId} from '@/lib/sensor-log'
 import type {WeatherScreenData} from '@/lib/weather'
 
@@ -24,7 +24,24 @@ const blockGroups:{label:string;ids:BlockId[]}[]=[
 	{label:'Солнце',ids:['sun','daylight','uv','radiation']},
 	{label:'Устройство',ids:['photo','sensor','sensorChart']},
 ]
-const refreshPresets=[5,10,15,30,60,180,360,720,1440]
+const refreshPresets=[1,5,10,15,30,60,180,360,720,1440]
+const hourOptions=Array.from({length:24},(_,hour)=>hour)
+function hourLabel(hour:number){return `${String(hour).padStart(2,'0')}:00`}
+function refreshSelectOptions(){
+	return <>
+		<option value={1}>1 минута</option>
+		<option value={5}>5 минут</option>
+		<option value={10}>10 минут</option>
+		<option value={15}>15 минут</option>
+		<option value={30}>30 минут</option>
+		<option value={60}>1 час</option>
+		<option value={180}>3 часа</option>
+		<option value={360}>6 часов</option>
+		<option value={720}>12 часов</option>
+		<option value={1440}>1 день</option>
+		<option value="custom">Свой интервал</option>
+	</>
+}
 const CELL=182
 const GAP=10
 
@@ -116,7 +133,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const [customSize,setCustomSize]=useState(()=>sizePresetId(initialPanel.screenWidth,initialPanel.screenHeight)==='custom')
 	const photoInput=useRef<HTMLInputElement>(null)
 	const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
-	const baseUrl=`${origin}/d/${panel.slug}`;const screenUrl=`${baseUrl}/screen.png?v=${encodeURIComponent(panel.updatedAt)}`
+	const baseUrl=`${origin}/d/${panel.slug}`;const configUrl=`${baseUrl}/config`;const screenUrl=`${baseUrl}/screen.png?v=${encodeURIComponent(panel.updatedAt)}`
 
 	const inspectorOpen=Boolean(selectedId||adding||selectedHeader)
 	useEffect(()=>{
@@ -191,6 +208,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	async function logout(){await fetch('/api/auth/logout',{method:'POST'});router.refresh()}
 	function selectHeader(){setSelectedHeader(true);setSelectedId(null);setAdding(false)}
 	function patchHeader(next:Partial<HeaderConfig>){setPanel({...panel,layout:{...panel.layout,header:{...getHeader(panel.layout),...next}}})}
+	function patchQuietHours(next:Partial<QuietHours>){setPanel({...panel,layout:{...panel.layout,quietHours:{...getQuietHours(panel.layout),...next}}})}
 	function patchSensor(next:Partial<SensorConfig>){setPanel({...panel,layout:{...panel.layout,sensor:{...getSensor(panel.layout),...next}}})}
 	async function onPhotoFile(file:File|undefined){
 		if(!file)return
@@ -209,6 +227,8 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	}
 	const previewWeather={...weather,layout:panel.layout,display:buildDisplay(panel.screenWidth,panel.screenHeight,panel.colorMode)}
 	const refreshValue=refreshPresets.includes(panel.refreshMinutes)?String(panel.refreshMinutes):'custom'
+	const quietHours=getQuietHours(panel.layout)
+	const quietRefreshValue=refreshPresets.includes(quietHours.refreshMinutes)?String(quietHours.refreshMinutes):'custom'
 	const sizePreset=sizePresetId(panel.screenWidth,panel.screenHeight)
 	const colorMeta=COLOR_MODES[panel.colorMode]
 	const addableBlocks=unusedBlocks.filter(id=>layoutWithAdded(id)!==null)
@@ -226,30 +246,41 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 
 	return <main className="desk-shell"><header className="desk-header"><div><p className="eyebrow">E‑INK CONTROL DESK</p><h1>{panel.name}</h1></div><div className="header-actions"><span className="user-chip">{username}</span><button className="text-button" onClick={logout}>Выйти</button></div></header>
 		<div className="desk-grid"><aside className="control-rail">
-			<section className="control-section"><div className="section-heading"><span>01</span><h2>Место и формат</h2></div><label>Название панели<input value={panel.name} onChange={e=>setPanel({...panel,name:e.target.value})}/></label>
+			<section className="control-section"><div className="section-heading"><span>01</span><h2>Экран</h2></div><label>Название панели<input value={panel.name} onChange={e=>setPanel({...panel,name:e.target.value})}/></label>
 				<div className="city-picker"><label htmlFor="city-search">Город</label><div className="city-search-row"><div className="city-input-wrap"><span aria-hidden="true">⌕</span><input id="city-search" role="combobox" aria-expanded={searching||cities.length>0||searchAttempted} aria-controls="city-results" aria-autocomplete="list" placeholder="Начните вводить город" value={cityQuery} onChange={e=>{setCityQuery(e.target.value);setCities([]);setSearchAttempted(false);setCityError('')}} autoComplete="off"/>{searching&&<i aria-label="Поиск города"/>}</div><button className="locate-button" type="button" onClick={locateCity} disabled={locating}><span aria-hidden="true">◎</span>{locating?'Определяем…':'Определить по GPS'}</button></div>
 					{cityQuery.trim().length>=2&&cityQuery!==panel.cityName&&(searching||cities.length>0||searchAttempted)&&<div className="city-results" id="city-results" role="listbox">{searching&&<p>Ищем подходящие города…</p>}{!searching&&cities.map(city=><button key={city.id} type="button" role="option" aria-selected="false" onClick={()=>chooseCity(city)}><strong>{city.name}</strong><span>{[city.region,city.country].filter(Boolean).join(' · ')}</span><small>{city.timezone}</small></button>)}{!searching&&searchAttempted&&cities.length===0&&!cityError&&<p>Ничего не найдено. Проверьте название.</p>}</div>}
 					<div className="selected-city"><span className="selected-city-mark" aria-hidden="true">●</span><div><b>{panel.cityName}</b><small>{panel.latitude.toFixed(3)}, {panel.longitude.toFixed(3)} · {panel.timezone}</small></div></div>{cityError&&<p className="city-error" role="alert">{cityError}</p>}<p className="location-note">GPS используется только после нажатия. Геокодирование: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></p>
 				</div>
 				<div className="two-columns"><label>Язык<select value={panel.language} onChange={e=>setPanel({...panel,language:e.target.value as EditablePanel['language']})}><option value="RU">Русский</option><option value="EN">English</option></select></label><label>Единицы<select value={panel.unitSystem} onChange={e=>setPanel({...panel,unitSystem:e.target.value as EditablePanel['unitSystem']})}><option value="METRIC">°C · м/с · мм</option><option value="IMPERIAL">°F · mph · inHg</option></select></label></div>
-				<label>Обновление<select value={refreshValue} onChange={e=>setPanel({...panel,refreshMinutes:e.target.value==='custom'?90:Number(e.target.value)})}><option value={5}>5 минут</option><option value={10}>10 минут</option><option value={15}>15 минут</option><option value={30}>30 минут</option><option value={60}>1 час</option><option value={180}>3 часа</option><option value={360}>6 часов</option><option value={720}>12 часов</option><option value={1440}>1 день</option><option value="custom">Свой интервал</option></select></label>
-				{refreshValue==='custom'&&<label>Свой интервал, минут<input type="number" min={5} max={1440} value={panel.refreshMinutes} onChange={e=>setPanel({...panel,refreshMinutes:Math.max(5,Math.min(1440,Number(e.target.value)))})}/><small>От 5 минут до 1 дня</small></label>}
-				<label className="chrome-toggle"><span>Кешировать PNG</span><input type="checkbox" checked={getCacheScreen(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cacheScreen:e.target.checked}})}/></label>
-				<p className="section-note">{getCacheScreen(panel.layout)?'Если погода не изменилась, устройство получит 304 и не перерисует экран.':'Каждый запрос отдаёт новый PNG с актуальным временем, даже если погода та же.'}</p>
-				<label>Разрешение экрана<select value={customSize?'custom':sizePreset} onChange={e=>{const preset=SIZE_PRESETS.find(item=>item.id===e.target.value);if(!preset||preset.id==='custom'){setCustomSize(true);return}setCustomSize(false);applyDisplay({screenWidth:preset.width,screenHeight:preset.height})}}>{SIZE_PRESETS.map(preset=><option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
-				{(customSize||sizePreset==='custom')&&<div className="two-columns"><label>Ширина, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenWidth} onChange={e=>applyDisplay({screenWidth:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label><label>Высота, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenHeight} onChange={e=>applyDisplay({screenHeight:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label></div>}
-				<label>Цвета панели<select value={panel.colorMode} onChange={e=>applyDisplay({colorMode:e.target.value as ColorModeId})}>{COLOR_MODE_IDS.map(id=><option key={id} value={id}>{COLOR_MODES[id].label}</option>)}</select></label>
-				<div className="palette-row" aria-hidden="true">{(colorMeta.palette.length?colorMeta.palette:['#1d4ed8','#c45c26','#f2c200','#15803d','#11130f','#f6f1e6']).map(hex=><i key={hex} style={{background:hex}}/>)}</div>
 				<label>Тема экрана<select value={getScreenTheme(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,theme:normalizeScreenTheme(e.target.value as ScreenThemeId)}})}>{SCREEN_THEME_IDS.map(id=><option key={id} value={id}>{SCREEN_THEMES[id].label}</option>)}</select></label>
 				<label>Размер шрифта<input type="range" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} step={5} value={getFontSize(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,fontSize:normalizeFontSize(Number(e.target.value))}})}/><small>{getFontSize(panel.layout)}%</small></label>
 				<label>Закругление<input type="range" min={MIN_CORNER_RADIUS} max={MAX_CORNER_RADIUS} step={2} value={getCornerRadius(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cornerRadius:normalizeCornerRadius(Number(e.target.value))}})}/><small>{getCornerRadius(panel.layout)} px</small></label>
 				<label>Зазор<input type="range" min={MIN_CARD_GAP} max={MAX_CARD_GAP} step={1} value={getCardGap(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cardGap:normalizeCardGap(Number(e.target.value))}})}/><small>{getCardGap(panel.layout)} px · между карточками и от края</small></label>
 				<label className="chrome-toggle"><span>Общая рамка</span><input type="checkbox" checked={getShowFrame(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,showFrame:e.target.checked}})}/></label>
 				<label className="chrome-toggle"><span>Рамки карточек</span><input type="checkbox" checked={getShowBorder(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,showBorder:e.target.checked}})}/></label>
-				<p className="section-note">{panel.screenWidth}×{panel.screenHeight} · {colorMeta.colors?`${colorMeta.colors} цвета`:'RGB'} · {panel.colorMode==='rgb'?'полноцветный PNG (обычно больше 64 КБ — текущая прошивка FireBeetle его не примет)':'PNG упаковывается в палитру экрана'}</p>
 				<button className="text-button header-edit-link" type="button" onClick={selectHeader}>Настроить шапку экрана</button>
 			</section>
-			<section className="control-section link-section"><div className="section-heading"><span>02</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
+			<section className="control-section"><div className="section-heading"><span>02</span><h2>Плата</h2></div>
+				<label>Обновление<select value={refreshValue} onChange={e=>setPanel({...panel,refreshMinutes:e.target.value==='custom'?90:Number(e.target.value)})}>{refreshSelectOptions()}</select></label>
+				{refreshValue==='custom'&&<label>Свой интервал, минут<input type="number" min={1} max={1440} value={panel.refreshMinutes} onChange={e=>setPanel({...panel,refreshMinutes:Math.max(1,Math.min(1440,Number(e.target.value)))})}/><small>От 1 минуты до 1 дня</small></label>}
+				<label className="chrome-toggle"><span>Ночной интервал</span><input type="checkbox" checked={quietHours.enabled} onChange={e=>patchQuietHours({enabled:e.target.checked})}/></label>
+				{quietHours.enabled&&<>
+					<div className="two-columns"><label>С<select value={quietHours.startHour} onChange={e=>patchQuietHours({startHour:Number(e.target.value)})}>{hourOptions.map(hour=><option key={hour} value={hour}>{hourLabel(hour)}</option>)}</select></label><label>До<select value={quietHours.endHour} onChange={e=>patchQuietHours({endHour:Number(e.target.value)})}>{hourOptions.map(hour=><option key={hour} value={hour}>{hourLabel(hour)}</option>)}</select></label></div>
+					<label>Интервал ночью<select value={quietRefreshValue} onChange={e=>patchQuietHours({refreshMinutes:e.target.value==='custom'?90:Number(e.target.value)})}>{refreshSelectOptions()}</select></label>
+					{quietRefreshValue==='custom'&&<label>Свой ночной интервал, минут<input type="number" min={1} max={1440} value={quietHours.refreshMinutes} onChange={e=>patchQuietHours({refreshMinutes:Math.max(1,Math.min(1440,Number(e.target.value)))})}/><small>От 1 минуты до 1 дня</small></label>}
+					<p className="section-note">По часовому поясу города. «До» не входит в окно: {hourLabel(quietHours.startHour)}–{hourLabel(quietHours.endHour)}. Если «С» и «До» совпадают, ограничение не действует.</p>
+				</>}
+				<label className="chrome-toggle"><span>Кешировать PNG</span><input type="checkbox" checked={getCacheScreen(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cacheScreen:e.target.checked}})}/></label>
+				<p className="section-note">{getCacheScreen(panel.layout)?'Если погода не изменилась, устройство получит 304 и не перерисует экран.':'Каждый запрос отдаёт новый PNG с актуальным временем, даже если погода та же.'}</p>
+				<label>Разрешение экрана<select value={customSize?'custom':sizePreset} onChange={e=>{const preset=SIZE_PRESETS.find(item=>item.id===e.target.value);if(!preset||preset.id==='custom'){setCustomSize(true);return}setCustomSize(false);applyDisplay({screenWidth:preset.width,screenHeight:preset.height})}}>{SIZE_PRESETS.map(preset=><option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
+				{(customSize||sizePreset==='custom')&&<div className="two-columns"><label>Ширина, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenWidth} onChange={e=>applyDisplay({screenWidth:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label><label>Высота, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenHeight} onChange={e=>applyDisplay({screenHeight:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label></div>}
+				<label>Цвета панели<select value={panel.colorMode} onChange={e=>applyDisplay({colorMode:e.target.value as ColorModeId})}>{COLOR_MODE_IDS.map(id=><option key={id} value={id}>{COLOR_MODES[id].label}</option>)}</select></label>
+				<div className="palette-row" aria-hidden="true">{(colorMeta.palette.length?colorMeta.palette:['#1d4ed8','#c45c26','#f2c200','#15803d','#11130f','#f6f1e6']).map(hex=><i key={hex} style={{background:hex}}/>)}</div>
+				<p className="section-note">{panel.screenWidth}×{panel.screenHeight} · {colorMeta.colors?`${colorMeta.colors} цвета`:'RGB'} · {panel.colorMode==='rgb'?'полноцветный PNG (обычно больше 64 КБ — текущая прошивка FireBeetle его не примет)':'PNG упаковывается в палитру экрана'}</p>
+			</section>
+			<section className="control-section link-section"><div className="section-heading"><span>03</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p>
+				<div className="config-url"><span>CONFIG</span><code>{configUrl}</code><button className="secondary-button" type="button" onClick={()=>copy(configUrl)}>Копировать</button></div>
+			</section>
 			<div className="save-dock"><button className="primary-button" onClick={save} disabled={saving}>{saving?'Сохраняем…':'Сохранить изменения'}</button>{message&&<p className="save-message" role="status">{message}</p>}</div>
 		</aside><section className="preview-area" onClick={()=>{setAdding(false);setSelectedId(null);setSelectedHeader(false)}}>
 			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b><small className="layout-hint">Карточки можно перетаскивать. Удаление — в настройках выбранной карточки.</small></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
@@ -315,7 +346,6 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 				</>}
 			</aside>}
 			</div>
-			<div className="endpoint-strip"><div><span>CONFIG</span><code>{baseUrl}/config</code></div><button onClick={()=>copy(`${baseUrl}/config`)}>Копировать</button></div>
 		</section></div>
 	</main>
 }

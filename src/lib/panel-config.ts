@@ -97,6 +97,51 @@ export function normalizeCacheScreen(value:unknown){
 	return value!==false
 }
 
+export type QuietHours={enabled:boolean;startHour:number;endHour:number;refreshMinutes:number}
+export const DEFAULT_QUIET_HOURS:QuietHours={enabled:true,startHour:23,endHour:6,refreshMinutes:60}
+
+function clampHour(value:unknown,fallback:number){
+	const n=Number(value)
+	if(!Number.isFinite(n))return fallback
+	const hour=Math.trunc(n)
+	return hour>=0&&hour<=23?hour:fallback
+}
+
+function clampRefreshMinutes(value:unknown,fallback:number){
+	const n=Number(value)
+	if(!Number.isFinite(n))return fallback
+	return Math.min(1440,Math.max(1,Math.trunc(n)))
+}
+
+export function normalizeQuietHours(value:unknown):QuietHours{
+	const source=value&&typeof value==='object'?value as Record<string,unknown>:{}
+	return {
+		enabled:source.enabled!==false,
+		startHour:clampHour(source.startHour,DEFAULT_QUIET_HOURS.startHour),
+		endHour:clampHour(source.endHour,DEFAULT_QUIET_HOURS.endHour),
+		refreshMinutes:clampRefreshMinutes(source.refreshMinutes,DEFAULT_QUIET_HOURS.refreshMinutes),
+	}
+}
+
+export function inQuietHours(hour:number,quiet:QuietHours){
+	if(!quiet.enabled)return false
+	const {startHour,endHour}=quiet
+	if(startHour===endHour)return false
+	if(startHour<endHour)return hour>=startHour&&hour<endHour
+	return hour>=startHour||hour<endHour
+}
+
+export function localHourInTimezone(timezone:string,at=new Date()){
+	const hour=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',hour12:false}).format(at)
+	return Number.parseInt(hour,10)%24
+}
+
+export function nextRefreshSeconds(refreshMinutes:number,timezone:string,quiet:QuietHours,at=new Date()){
+	const regularSeconds=clampRefreshMinutes(refreshMinutes,10)*60
+	if(!inQuietHours(localHourInTimezone(timezone,at),quiet))return regularSeconds
+	return quiet.refreshMinutes*60
+}
+
 export const TIME_RANGES = ['day','days3','week','weeks2','month'] as const
 export type TimeRangeId = (typeof TIME_RANGES)[number]
 export const TIME_RANGE_DAYS: Record<TimeRangeId, number> = {day:1, days3:3, week:7, weeks2:14, month:16}
@@ -110,7 +155,7 @@ export const DEFAULT_CARD_RANGE: Record<RangeBlockId, TimeRangeId> = {
 	temperatureChart:'day', precipitationChart:'day', windChart:'day',
 }
 
-export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;sensorChartRange?:SensorChartRangeId;sensorChartFilter?:SensorChartFilterId;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;showFrame?:boolean;cacheScreen?:boolean;header?:HeaderConfig;sensor?:SensorConfig}
+export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;sensorChartRange?:SensorChartRangeId;sensorChartFilter?:SensorChartFilterId;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;showFrame?:boolean;cacheScreen?:boolean;quietHours?:QuietHours;header?:HeaderConfig;sensor?:SensorConfig}
 
 export function getSensorChartRange(layout:PanelLayout):SensorChartRangeId{
 	return parseSensorChartRange(layout.sensorChartRange)
@@ -212,6 +257,9 @@ export function getShowFrame(layout:PanelLayout){
 export function getCacheScreen(layout:PanelLayout){
 	return normalizeCacheScreen(layout.cacheScreen)
 }
+export function getQuietHours(layout:PanelLayout){
+	return normalizeQuietHours(layout.quietHours)
+}
 export type GridPlacement = {id:BlockId;col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export type GridSlot = {col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export const DEFAULT_LAYOUT:PanelLayout={blocks:['current','clock','weatherScene','temperatureChart','precipitationChart'],spans:{weatherScene:2,temperatureChart:2,precipitationChart:2}}
@@ -288,7 +336,7 @@ export type EditablePanel={
 
 export function normalizeLayout(value:unknown):PanelLayout{
 	if(!value||typeof value!=='object')return DEFAULT_LAYOUT
-	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;sensorChartRange?:unknown;sensorChartFilter?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;showFrame?:unknown;cacheScreen?:unknown;header?:unknown;sensor?:unknown}
+	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;sensorChartRange?:unknown;sensorChartFilter?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;showFrame?:unknown;cacheScreen?:unknown;quietHours?:unknown;header?:unknown;sensor?:unknown}
 	let candidates:unknown[]=Array.isArray(source.blocks)?source.blocks:[]
 	// Convert layouts stored by the first editor version.
 	if(!candidates.length&&Array.isArray(source.order)){
@@ -328,11 +376,12 @@ export function normalizeLayout(value:unknown):PanelLayout{
 	const showBorder=normalizeShowBorder(source.showBorder)
 	const showFrame=normalizeShowFrame(source.showFrame)
 	const cacheScreen=normalizeCacheScreen(source.cacheScreen)
+	const quietHours=normalizeQuietHours(source.quietHours)
 	const parsedRange=parseSensorChartRange(source.sensorChartRange)
 	const sensorChartRange=parsedRange!==DEFAULT_SENSOR_CHART_RANGE?parsedRange:undefined
 	const parsedFilter=parseSensorChartFilter(source.sensorChartFilter)
 	const sensorChartFilter=parsedFilter!==DEFAULT_SENSOR_CHART_FILTER?parsedFilter:undefined
-	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(sensorChartRange?{sensorChartRange}:{}),...(sensorChartFilter?{sensorChartFilter}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,showFrame,cacheScreen,sensor,...(header?{header}:{})}
+	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(sensorChartRange?{sensorChartRange}:{}),...(sensorChartFilter?{sensorChartFilter}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,showFrame,cacheScreen,quietHours,sensor,...(header?{header}:{})}
 	const layout:PanelLayout={blocks:normalizedBlocks,spans,...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 }
