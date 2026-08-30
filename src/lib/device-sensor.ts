@@ -69,9 +69,19 @@ export function parseDeviceSensor(requestUrl: string, unitSystem: UnitSystemCode
 
 export function demoDeviceSensor(unitSystem: UnitSystemCode): DeviceSensorReading {
 	const reading = parseDeviceSensor(
-		'https://preview.local/screen.png?chip=bmp280&temp_c=22.4&pressure_hpa=1013.25&altitude_m=12',
+		'https://preview.local/screen.png?chip=bme280&temp_c=22.4&pressure_hpa=1013.25&altitude_m=12&humidity=48',
 		unitSystem,
 	)
-	if (!reading) throw new Error('Demo BMP280 reading is invalid')
+	if (!reading) throw new Error('Demo sensor reading is invalid')
 	return reading
+}
+
+export function parseDeviceBatteryPercent(requestUrl: string): number | null {
+	const percent = readNumber(new URL(requestUrl).searchParams, 'batt_pct')
+	if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null
+	return Math.round(percent)
+}
+
+export function demoDeviceBatteryPercent() {
+	return 76
 }

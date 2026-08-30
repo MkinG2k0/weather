@@ -1,6 +1,7 @@
 import type {DeviceSensorReading} from './device-sensor'
 import {buildDisplay, DEFAULT_COLOR_MODE, DEFAULT_SCREEN_HEIGHT, DEFAULT_SCREEN_WIDTH, type PanelDisplay} from './display'
 import {DEFAULT_LAYOUT, normalizeLayout, type LanguageCode, type PanelLayout, type UnitSystemCode} from './panel-config'
+import type {SensorTempPoint} from './sensor-log'
 
 export type WeatherSettings = {
 	cityName: string
@@ -81,6 +82,8 @@ export type WeatherScreenData = {
 	layout: PanelLayout
 	display: PanelDisplay
 	sensor: DeviceSensorReading | null
+	sensorTempLog: SensorTempPoint[]
+	batteryPercent: number | null
 }
 
 type OpenMeteoResponse = {
@@ -218,5 +221,7 @@ export async function getWeatherScreenData(settings: WeatherSettings = DEFAULT_W
 		layout,
 		display:buildDisplay(settings.screenWidth??layout.screenWidth??DEFAULT_SCREEN_WIDTH,settings.screenHeight??layout.screenHeight??DEFAULT_SCREEN_HEIGHT,settings.colorMode??layout.colorMode??DEFAULT_COLOR_MODE),
 		sensor:null,
+		sensorTempLog:[],
+		batteryPercent:null,
 	}
 }

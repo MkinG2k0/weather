@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto'
-import {parseDeviceSensor} from '@/lib/device-sensor'
+import {parseDeviceBatteryPercent,parseDeviceSensor} from '@/lib/device-sensor'
 import {normalizeLayout} from '@/lib/panel-config'
 import {prisma} from '@/lib/prisma'
+import {incomingSensorPoints, mergeSensorLog} from '@/lib/sensor-log'
 import {getWeatherScreenData} from '@/lib/weather'
 import {renderWeatherDataImage,weatherImageResponse} from '@/lib/weather-image'
 
@@ -30,6 +31,13 @@ export async function GET(request:Request,{params}:{params:Promise<{slug:string}
 		weather.sensor=layout.blocks.includes('sensor')
 			? parseDeviceSensor(request.url, panel.unitSystem)
 			: null
+		weather.batteryPercent=parseDeviceBatteryPercent(request.url)
+		const incoming=incomingSensorPoints(request.url)
+		const merged=mergeSensorLog(panel.sensorLog, incoming)
+		if(incoming.length){
+			await prisma.weatherPanel.update({where:{id:panel.id},data:{sensorLog:merged}})
+		}
+		weather.sensorTempLog=layout.blocks.includes('sensorChart')?merged:[]
 		const etag=`"${createHash('sha256').update(JSON.stringify(weather)).digest('hex')}"`
 		const responseHeaders={
 			'Cache-Control':'no-store',

@@ -1,7 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 import type {CSSProperties, ReactNode} from 'react'
 import {DESIGN_HEIGHT, DESIGN_WIDTH} from '@/lib/display'
-import {findEmptySlot,getCardGap,getCardRangeDays,getCornerRadius,getFontSize,getHeader,getScreenTheme,getShowBorder,packBlockGrid,type BlockId,type CardRowSpan,type CardSpan} from '@/lib/panel-config'
+import {findEmptySlot,getCardGap,getCardRangeDays,getCornerRadius,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartRange,getShowBorder,getShowFrame,packBlockGrid,type BlockId,type CardRowSpan,type CardSpan} from '@/lib/panel-config'
+import {downsampleSensorLog,SENSOR_CHART_CAPTIONS,SENSOR_CHART_HOURS,sliceSensorLog} from '@/lib/sensor-log'
 import {SCREEN_FONT_FAMILY} from '@/lib/screen-font'
 import {WeatherIcon} from '@/components/weather-icons'
 import type {WeatherDailyItem, WeatherHourlyPoint, WeatherScreenData} from '@/lib/weather'
@@ -32,7 +33,7 @@ function cardBorder(weather:WeatherScreenData):CSSProperties{
 }
 function panelBox(weather:WeatherScreenData, extra?:CSSProperties): CSSProperties {
 	const t=paint(weather)
-	return {display:'flex', flex:1, minWidth:0, minHeight:0, overflow:'hidden', background:t.cardBg, color:t.cardFg, borderRadius:t.radius, ...cardBorder(weather), ...extra}
+	return {display:'flex', flex:1, minWidth:0, minHeight:0, overflow:'hidden', background:t.cardBg, color:t.cardFg, borderRadius:`${t.radius}px`, ...cardBorder(weather), ...extra}
 }
 let fontMul=1
 function applyFontScale(weather:WeatherScreenData){fontMul=getFontSize(weather.layout)/100}
@@ -225,6 +226,22 @@ function chartSeries(weather:WeatherScreenData,id:BlockId){
 	return {days,points:daysList,labels:daysList.map(day=>days>7?day.dayNum:day.day),temps:daysList.map(d=>d.high),feels:daysList.map(d=>d.low),precip:daysList.map(d=>d.precipitationProbability),wind:daysList.map(d=>d.windSpeedMax),gust:daysList.map(d=>d.windSpeedMax)}
 }
 function TemperatureChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const series=chartSeries(weather,'temperatureChart');return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${isRu(weather)?'ТЕМПЕРАТУРА':'TEMPERATURE'} · ${rangeCaption(series.days,isRu(weather))}`}</CardTitle><SparkChart {...chartColors(weather)} values={series.temps} secondary={series.feels} labels={series.labels} unit="°"/></div>}
+function sensorChartTick(unix:number,timezone:string,hours:number,ru:boolean){
+	const date=new Date(unix*1000)
+	if(hours<=23)return new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(date)
+	if(hours<=72)return new Intl.DateTimeFormat(ru?'ru-RU':'en-GB',{timeZone:timezone,weekday:'short',hour:'2-digit',hour12:false}).format(date).toUpperCase()
+	return new Intl.DateTimeFormat(ru?'ru-RU':'en-GB',{timeZone:timezone,day:'2-digit',month:'short'}).format(date).toUpperCase()
+}
+function SensorChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){
+	const ru=isRu(weather)
+	const range=getSensorChartRange(weather.layout)
+	const hours=SENSOR_CHART_HOURS[range]
+	const caption=SENSOR_CHART_CAPTIONS[range][ru?'ru':'en']
+	const sliced=downsampleSensorLog(sliceSensorLog(weather.sensorTempLog??[],hours),compact?12:24)
+	if(!sliced.length)return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ДАТЧИК · ТЕМП.':'SENSOR · TEMP'} · ${caption}`}</CardTitle><div style={{...text(compact?11:14),marginTop:8}}>{ru?'НЕТ ЗАПИСЕЙ':'NO SAMPLES YET'}</div></div>
+	const toDisplay=(celsius:number)=>weather.temperatureUnit==='°F'?celsius*9/5+32:celsius
+	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ДАТЧИК · ТЕМП.':'SENSOR · TEMP'} · ${caption}`}</CardTitle><SparkChart {...chartColors(weather)} values={sliced.map(point=>toDisplay(point.c))} labels={sliced.map(point=>sensorChartTick(point.t,weather.timezone,hours,ru))} unit="°"/></div>
+}
 function PrecipitationChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const series=chartSeries(weather,'precipitationChart');return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${isRu(weather)?'ОСАДКИ':'PRECIPITATION'} · ${rangeCaption(series.days,isRu(weather))}`}</CardTitle><SparkChart {...chartColors(weather)} values={series.precip} labels={series.labels} unit="%" bars/></div>}
 function WindChartCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const series=chartSeries(weather,'windChart');return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${weather.labels.wind} · ${rangeCaption(series.days,isRu(weather))}`}</CardTitle><SparkChart {...chartColors(weather)} values={series.wind} secondary={series.gust} labels={series.labels} unit={weather.windUnit}/></div>}
 
@@ -380,24 +397,25 @@ function AirQualityCard({weather,compact}:{weather:WeatherScreenData;compact:boo
 function SensorCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){
 	const ru=weather.labels.wind==='ВЕТЕР'
 	const sensor=weather.sensor
+	const fields=getSensor(weather.layout)
 	const title=ru?'В КОМНАТЕ':'INDOOR'
 	if(!sensor)return <SimpleValueCard weather={weather} compact={compact} label={title} value="—" detail={ru?'НЕТ ДАННЫХ С УСТРОЙСТВА':'NO DATA FROM DEVICE'}/>
-	const extras:[[string,string],[string,string],...[string,string][]]=[
-		[weather.labels.pressure,sensor.pressure],
-		[ru?'ВЫСОТА':'ALTITUDE',sensor.altitude],
-		...(sensor.hasHumidity&&sensor.humidity?[[weather.labels.humidity,sensor.humidity] as [string,string]]:[]),
+	const extras:[string,string][]=[
+		...(fields.pressure?[[weather.labels.pressure,sensor.pressure] as [string,string]]:[]),
+		...(fields.altitude?[[ru?'ВЫСОТА':'ALTITUDE',sensor.altitude] as [string,string]]:[]),
+		...(fields.humidity?[[weather.labels.humidity,sensor.humidity??'—'] as [string,string]]:[]),
 	]
 	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 10px 6px':'14px 16px',overflow:'hidden'}}>
 		<CardTitle compact={compact}>{title}</CardTitle>
 		<div style={{display:'flex',flex:1,minHeight:0,alignItems:'center'}}>
 			<div style={{...text(compact?36:52,900),lineHeight:.9}}>{sensor.temperature}</div>
 		</div>
-		<div style={{display:'flex',flexShrink:0,gap:compact?8:14}}>{extras.map(([label,value])=>
+		{extras.length>0?<div style={{display:'flex',flexShrink:0,gap:compact?8:14}}>{extras.map(([label,value])=>
 			<div key={label} style={{display:'flex',flex:1,minWidth:0,flexDirection:'column',borderTop:'2px solid currentColor',paddingTop:compact?4:8}}>
 				<div style={{...text(compact?8:10,800)}}>{label}</div>
 				<div style={{...text(compact?13:18,900),lineHeight:1.1,marginTop:2}}>{value}</div>
 			</div>
-		)}</div>
+		)}</div>:null}
 	</div>
 }
 
@@ -407,7 +425,7 @@ export function renderPanelCard(id:BlockId,weather:WeatherScreenData,compact:boo
 }
 
 const cardRenderers: Record<BlockId,(weather:WeatherScreenData,compact:boolean,span:number)=>ReactNode> = {
-	current:(weather,compact)=><CurrentCard weather={weather} compact={compact}/>,overview:(weather,compact)=><OverviewCard weather={weather} compact={compact}/>,photo:weather=><PhotoCard weather={weather}/>,weatherScene:(weather,compact,span)=><WeatherSceneCard weather={weather} compact={compact} span={span}/>,clock:(weather,compact)=><ClockCard weather={weather} compact={compact}/>,forecast:(weather,compact)=><ForecastCard weather={weather} compact={compact}/>,dailyForecast:(weather,compact)=><DailyForecastCard weather={weather} compact={compact}/>,weekStrip:(weather,compact,span)=><WeekStripCard weather={weather} compact={compact} span={span}/>,weekTiles:(weather,compact,span)=><WeekTilesCard weather={weather} compact={compact} span={span}/>,weekRange:(weather,compact,span)=><WeekRangeCard weather={weather} compact={compact} span={span}/>,temperatureChart:(weather,compact)=><TemperatureChartCard weather={weather} compact={compact}/>,precipitationChart:(weather,compact)=><PrecipitationChartCard weather={weather} compact={compact}/>,windChart:(weather,compact)=><WindChartCard weather={weather} compact={compact}/>,feels:(weather,compact)=><FeelsCard weather={weather} compact={compact}/>,humidity:(weather,compact)=><HumidityCard weather={weather} compact={compact}/>,pressure:(weather,compact)=><PressureCard weather={weather} compact={compact}/>,precipitation:(weather,compact)=><PrecipitationCard weather={weather} compact={compact}/>,precipitationDetail:(weather,compact)=><PrecipitationDetailCard weather={weather} compact={compact}/>,metrics:(weather,compact)=><MetricsCard weather={weather} compact={compact}/>,wind:(weather,compact)=><WindCard weather={weather} compact={compact}/>,sun:(weather,compact)=><SunCard weather={weather} compact={compact}/>,daylight:(weather,compact)=><DaylightCard weather={weather} compact={compact}/>,clouds:(weather,compact)=><CloudsCard weather={weather} compact={compact}/>,cloudLayers:(weather,compact)=><CloudLayersCard weather={weather} compact={compact}/>,visibility:(weather,compact)=><SimpleValueCard weather={weather} compact={compact} label={weather.labels.visibility} value={`${weather.visibility} ${weather.visibilityUnit}`} detail={`${weather.labels.clouds} ${weather.cloudCover}%`}/>,dewPoint:(weather,compact)=><SimpleValueCard weather={weather} compact={compact} label={weather.labels.dewPoint} value={`${weather.dewPoint}°`} detail={`${weather.labels.humidity} ${weather.humidity}%`}/>,	uv:(weather,compact)=><SimpleValueCard weather={weather} compact={compact} label={weather.labels.uv} value={String(weather.uvIndex)} detail={`${weather.labels.wind==='ВЕТЕР'?'ПРИ ЯСНОМ НЕБЕ':'CLEAR SKY'} ${weather.uvIndexClearSky}`}/>,radiation:(weather,compact)=><RadiationCard weather={weather} compact={compact}/>,airQuality:(weather,compact)=><AirQualityCard weather={weather} compact={compact}/>,sensor:(weather,compact)=><SensorCard weather={weather} compact={compact}/>,
+	current:(weather,compact)=><CurrentCard weather={weather} compact={compact}/>,overview:(weather,compact)=><OverviewCard weather={weather} compact={compact}/>,photo:weather=><PhotoCard weather={weather}/>,weatherScene:(weather,compact,span)=><WeatherSceneCard weather={weather} compact={compact} span={span}/>,clock:(weather,compact)=><ClockCard weather={weather} compact={compact}/>,forecast:(weather,compact)=><ForecastCard weather={weather} compact={compact}/>,dailyForecast:(weather,compact)=><DailyForecastCard weather={weather} compact={compact}/>,weekStrip:(weather,compact,span)=><WeekStripCard weather={weather} compact={compact} span={span}/>,weekTiles:(weather,compact,span)=><WeekTilesCard weather={weather} compact={compact} span={span}/>,weekRange:(weather,compact,span)=><WeekRangeCard weather={weather} compact={compact} span={span}/>,temperatureChart:(weather,compact)=><TemperatureChartCard weather={weather} compact={compact}/>,precipitationChart:(weather,compact)=><PrecipitationChartCard weather={weather} compact={compact}/>,windChart:(weather,compact)=><WindChartCard weather={weather} compact={compact}/>,feels:(weather,compact)=><FeelsCard weather={weather} compact={compact}/>,humidity:(weather,compact)=><HumidityCard weather={weather} compact={compact}/>,pressure:(weather,compact)=><PressureCard weather={weather} compact={compact}/>,precipitation:(weather,compact)=><PrecipitationCard weather={weather} compact={compact}/>,precipitationDetail:(weather,compact)=><PrecipitationDetailCard weather={weather} compact={compact}/>,metrics:(weather,compact)=><MetricsCard weather={weather} compact={compact}/>,wind:(weather,compact)=><WindCard weather={weather} compact={compact}/>,sun:(weather,compact)=><SunCard weather={weather} compact={compact}/>,daylight:(weather,compact)=><DaylightCard weather={weather} compact={compact}/>,clouds:(weather,compact)=><CloudsCard weather={weather} compact={compact}/>,cloudLayers:(weather,compact)=><CloudLayersCard weather={weather} compact={compact}/>,visibility:(weather,compact)=><SimpleValueCard weather={weather} compact={compact} label={weather.labels.visibility} value={`${weather.visibility} ${weather.visibilityUnit}`} detail={`${weather.labels.clouds} ${weather.cloudCover}%`}/>,dewPoint:(weather,compact)=><SimpleValueCard weather={weather} compact={compact} label={weather.labels.dewPoint} value={`${weather.dewPoint}°`} detail={`${weather.labels.humidity} ${weather.humidity}%`}/>,	uv:(weather,compact)=><SimpleValueCard weather={weather} compact={compact} label={weather.labels.uv} value={String(weather.uvIndex)} detail={`${weather.labels.wind==='ВЕТЕР'?'ПРИ ЯСНОМ НЕБЕ':'CLEAR SKY'} ${weather.uvIndexClearSky}`}/>,radiation:(weather,compact)=><RadiationCard weather={weather} compact={compact}/>,airQuality:(weather,compact)=><AirQualityCard weather={weather} compact={compact}/>,sensor:(weather,compact)=><SensorCard weather={weather} compact={compact}/>,sensorChart:(weather,compact)=><SensorChartCard weather={weather} compact={compact}/>,
 }
 
 export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,renderHeader,addSlot}:WeatherScreenProps) {
@@ -428,10 +446,12 @@ export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,
 	const screenH=size.height
 	const sizeMul=header.size==='s'?0.72:header.size==='l'?1.22:1
 	const headerH=header.visible?Math.max(36,Math.round(64*sizeMul*Math.min(screenW/DESIGN_WIDTH,screenH/DESIGN_HEIGHT,1.15))):0
-	const innerW=screenW-16
-	const bodyH=screenH-16-headerH
-	const pad=Math.max(8,Math.round(14*Math.min(screenW/DESIGN_WIDTH,1)))
+	const frame=getShowFrame(weather.layout)?8:0
+	const innerW=screenW-frame*2
+	const bodyH=screenH-frame*2-headerH
 	const gap=getCardGap(weather.layout)
+	const pad=gap
+	const radius=chrome.radius
 	const cellW=(innerW-pad*2-gap*3)/4
 	const cellH=(bodyH-pad*2-gap*Math.max(0,rowCount-1))/rowCount
 	const cellStyle=(col:number,row:number,colSpan:CardSpan,rowSpan:CardRowSpan)=>({
@@ -443,25 +463,29 @@ export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,
 		height:rowSpan*cellH+(rowSpan-1)*gap,
 		minWidth:0,
 		minHeight:0,
-		overflow:'visible' as const,
+		overflow:'hidden' as const,
+		borderRadius:`${radius}px`,
 	})
 	const filled=header.style==='fill'
 	const headerBg=filled?chrome.headerBg:chrome.paper
 	const headerFg=filled?chrome.headerFg:chrome.ink
 	const title=(header.title??weather.city).toUpperCase()
+	const scale=Math.min(screenW/DESIGN_WIDTH,1)
+	const showBattery=header.showBattery&&weather.batteryPercent!=null
 	const showLeft=header.showCity||header.showCoords
-	const showRight=header.showDate||header.showTime
-	const radius=chrome.radius
-	const frame=8
-	const innerRadius=Math.max(0,radius-frame)
-	const headerBar=header.visible?<div style={{height:headerH,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px',background:headerBg,color:headerFg,boxSizing:'border-box',overflow:'hidden',borderTopLeftRadius:innerRadius,borderTopRightRadius:innerRadius,...(header.style==='line'?{borderBottom:`3px solid ${chrome.ink}`}:{})}}>
-			{showLeft?<div style={{display:'flex',alignItems:'baseline',gap:10,minWidth:0}}>{header.showCity?<div style={{...text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:25)*Math.min(screenW/DESIGN_WIDTH,1))),900),letterSpacing:.7}}>{title}</div>:null}{header.showCoords?<div style={{...text(Math.max(8,Math.round(10*Math.min(screenW/DESIGN_WIDTH,1)))),letterSpacing:1.5}}>{weather.coordinates}</div>:null}</div>:<div/>}
-			{showRight?<div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>{header.showDate?<div style={{...text(Math.max(9,Math.round(12*Math.min(screenW/DESIGN_WIDTH,1))),800),letterSpacing:1}}>{date}</div>:null}{header.showTime?<div style={text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:24)*Math.min(screenW/DESIGN_WIDTH,1))),900)}>{time}</div>:null}</div>:null}
+	const showRight=header.showDate||header.showTime||showBattery
+	const battW=Math.max(16,Math.round(22*scale*(header.size==='s'?0.85:header.size==='l'?1.15:1)))
+	const battH=Math.max(8,Math.round(11*scale*(header.size==='s'?0.85:header.size==='l'?1.15:1)))
+	const battFill=showBattery?Math.max(0,Math.round((battW-6)*Math.min(100,Math.max(0,weather.batteryPercent??0))/100)):0
+	const outerRadius=radius?(frame?radius+frame:radius):0
+	const headerBar=header.visible?<div style={{height:headerH,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px',background:headerBg,color:headerFg,boxSizing:'border-box',overflow:'hidden',borderTopLeftRadius:radius,borderTopRightRadius:radius,...(header.style==='line'?{borderBottom:`3px solid ${chrome.ink}`}:{})}}>
+			{showLeft?<div style={{display:'flex',alignItems:'baseline',gap:10,minWidth:0}}>{header.showCity?<div style={{...text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:25)*scale)),900),letterSpacing:.7}}>{title}</div>:null}{header.showCoords?<div style={{...text(Math.max(8,Math.round(10*scale))),letterSpacing:1.5}}>{weather.coordinates}</div>:null}</div>:<div/>}
+			{showRight?<div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>{header.showDate?<div style={{...text(Math.max(9,Math.round(12*scale)),800),letterSpacing:1}}>{date}</div>:null}{header.showTime?<div style={text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:24)*scale)),900)}>{time}</div>:null}{showBattery?<div style={{display:'flex',alignItems:'center',gap:6}}><div style={{display:'flex',width:battW,height:battH,border:`2px solid ${headerFg}`,padding:1,boxSizing:'border-box'}}><div style={{width:battFill,height:'100%',background:headerFg}}/></div><div style={{width:3,height:Math.max(4,Math.round(battH*0.45)),background:headerFg}}/><div style={text(Math.max(12,Math.round((header.size==='s'?16:header.size==='l'?22:18)*scale)),900)}>{weather.batteryPercent}%</div></div>:null}</div>:null}
 		</div>:null
-	return <div style={{width:screenW,height:screenH,display:'flex',background:chrome.frame,color:chrome.ink,fontFamily:renderBlock?undefined:SCREEN_FONT_FAMILY,fontSize:fs(16),borderRadius:radius,overflow:'hidden',boxSizing:'border-box',padding:frame}}>
-		<div style={{display:'flex',flexDirection:'column',flex:1,minWidth:0,minHeight:0,background:chrome.paper,color:chrome.ink,borderRadius:innerRadius,overflow:'hidden'}}>
+	return <div style={{width:screenW,height:screenH,display:'flex',flexDirection:'column',background:frame?chrome.frame:chrome.paper,color:chrome.ink,fontFamily:renderBlock?undefined:SCREEN_FONT_FAMILY,fontSize:fs(16),padding:frame,borderRadius:outerRadius,overflow:'hidden',boxSizing:'border-box'}}>
+		<div style={{display:'flex',flex:1,minHeight:0,flexDirection:'column',background:chrome.paper,borderRadius:radius,overflow:'hidden'}}>
 			{renderHeader?renderHeader(headerBar):headerBar}
-			<div style={{display:'flex',flex:1,minHeight:0,position:'relative'}}>
+			<div style={{display:'flex',flex:1,minHeight:0,position:'relative',overflow:'hidden'}}>
 				{packed.map(item=>{const compact=hasSecondRow&&item.rowSpan===1;const content=renderPanelCard(item.id,weather,compact,item.colSpan);return <div key={item.id} className="screen-cell" style={cellStyle(item.col,item.row,item.colSpan,item.rowSpan)}>{renderBlock?renderBlock(item.id,content):content}</div>})}
 				{empty&&addSlot?<div style={cellStyle(empty.col,empty.row,empty.colSpan,empty.rowSpan)}>{addSlot}</div>:null}
 			</div>

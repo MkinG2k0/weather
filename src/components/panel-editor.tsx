@@ -6,19 +6,21 @@ import {closestCorners,DndContext,KeyboardSensor,PointerSensor,useSensor,useSens
 import {arrayMove,rectSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
 import {WeatherScreen,renderPanelCard} from '@/components/weather-screen'
 import {buildDisplay,COLOR_MODES,COLOR_MODE_IDS,MIN_SCREEN,MAX_SCREEN,sizePresetId,SIZE_PRESETS,type ColorModeId} from '@/lib/display'
-import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getScreenTheme,getShowBorder,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,withCardRange,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type ScreenThemeId,type TimeRangeId} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartRange,getShowBorder,getShowFrame,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,withCardRange,withCardSize,withSensorChartRange,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type ScreenThemeId,type SensorConfig,type TimeRangeId} from '@/lib/panel-config'
+import {type SensorChartRangeId} from '@/lib/sensor-log'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
-const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз по дням',weekStrip:'Дни · иконки',weekTiles:'Дни · плитки',weekRange:'Дни · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик'}
+const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз по дням',weekStrip:'Дни · иконки',weekTiles:'Дни · плитки',weekRange:'Дни · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик',sensorChart:'График датчика'}
 const rangePips:{id:TimeRangeId;label:string}[]=[{id:'day',label:'День'},{id:'days3',label:'3 дня'},{id:'week',label:'Нед'},{id:'weeks2',label:'2 нед'},{id:'month',label:'Мес'}]
+const sensorRangePips:{id:SensorChartRangeId;label:string}[]=[{id:'hour',label:'1ч'},{id:'hours3',label:'3ч'},{id:'hours6',label:'6ч'},{id:'hours12',label:'12ч'},{id:'hours23',label:'23ч'},{id:'days3',label:'3дн'},{id:'week',label:'Нед'},{id:'month',label:'Мес'}]
 const blockGroups:{label:string;ids:BlockId[]}[]=[
 	{label:'Главное',ids:['current','overview','weatherScene','clock','metrics']},
 	{label:'Прогнозы и графики',ids:['forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart']},
 	{label:'Атмосфера',ids:['feels','humidity','pressure','visibility','dewPoint','airQuality']},
 	{label:'Осадки, ветер и облака',ids:['precipitation','precipitationDetail','wind','clouds','cloudLayers']},
 	{label:'Солнце',ids:['sun','daylight','uv','radiation']},
-	{label:'Устройство',ids:['photo','sensor']},
+	{label:'Устройство',ids:['photo','sensor','sensorChart']},
 ]
 const refreshPresets=[5,10,15,30,60,180,360,720,1440]
 const CELL=182
@@ -157,6 +159,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	async function logout(){await fetch('/api/auth/logout',{method:'POST'});router.refresh()}
 	function selectHeader(){setSelectedHeader(true);setSelectedId(null);setAdding(false)}
 	function patchHeader(next:Partial<HeaderConfig>){setPanel({...panel,layout:{...panel.layout,header:{...getHeader(panel.layout),...next}}})}
+	function patchSensor(next:Partial<SensorConfig>){setPanel({...panel,layout:{...panel.layout,sensor:{...getSensor(panel.layout),...next}}})}
 	async function onPhotoFile(file:File|undefined){
 		if(!file)return
 		try{
@@ -180,6 +183,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const canAddCard=panel.layout.blocks.length<MAX_BLOCKS&&addableBlocks.length>0
 	const selected=selectedId&&panel.layout.blocks.includes(selectedId)?selectedId:null
 	const header=getHeader(panel.layout)
+	const sensorFields=getSensor(panel.layout)
 	const selectedSpan=selected?getCardSpan(panel.layout,selected):1
 	const selectedRowSpan=selected?getCardRowSpan(panel.layout,selected):1
 	const catalogIds=adding?addableBlocks:selected?BLOCK_IDS.filter(id=>id===selected||!panel.layout.blocks.includes(id)):[]
@@ -204,7 +208,8 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 				<label>Тема экрана<select value={getScreenTheme(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,theme:normalizeScreenTheme(e.target.value as ScreenThemeId)}})}>{SCREEN_THEME_IDS.map(id=><option key={id} value={id}>{SCREEN_THEMES[id].label}</option>)}</select></label>
 				<label>Размер шрифта<input type="range" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} step={5} value={getFontSize(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,fontSize:normalizeFontSize(Number(e.target.value))}})}/><small>{getFontSize(panel.layout)}%</small></label>
 				<label>Закругление<input type="range" min={MIN_CORNER_RADIUS} max={MAX_CORNER_RADIUS} step={2} value={getCornerRadius(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cornerRadius:normalizeCornerRadius(Number(e.target.value))}})}/><small>{getCornerRadius(panel.layout)} px</small></label>
-				<label>Зазор между карточками<input type="range" min={MIN_CARD_GAP} max={MAX_CARD_GAP} step={1} value={getCardGap(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cardGap:normalizeCardGap(Number(e.target.value))}})}/><small>{getCardGap(panel.layout)} px</small></label>
+				<label>Зазор<input type="range" min={MIN_CARD_GAP} max={MAX_CARD_GAP} step={1} value={getCardGap(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cardGap:normalizeCardGap(Number(e.target.value))}})}/><small>{getCardGap(panel.layout)} px · между карточками и от края</small></label>
+				<label className="chrome-toggle"><span>Общая рамка</span><input type="checkbox" checked={getShowFrame(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,showFrame:e.target.checked}})}/></label>
 				<label className="chrome-toggle"><span>Рамки карточек</span><input type="checkbox" checked={getShowBorder(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,showBorder:e.target.checked}})}/></label>
 				<p className="section-note">{panel.screenWidth}×{panel.screenHeight} · {colorMeta.colors?`${colorMeta.colors} цвета`:'RGB'} · PNG квантуется в выбранную палитру</p>
 				<button className="text-button header-edit-link" type="button" onClick={selectHeader}>Настроить шапку экрана</button>
@@ -215,7 +220,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b><small className="layout-hint">Карточки можно перетаскивать. Удаление — в настройках выбранной карточки.</small></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="preview-stage" ref={previewStage}>
 			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className={`screen-bezel component-host${dragId?' is-reordering':''}`} ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}><div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={clearDrag}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} previewScale={previewScale} radius={getCornerRadius(panel.layout)} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" style={{borderRadius:getCornerRadius(panel.layout)}} onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
+				<DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={clearDrag}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} style={{overflow:'hidden',borderTopLeftRadius:getCornerRadius(panel.layout),borderTopRightRadius:getCornerRadius(panel.layout)}} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} previewScale={previewScale} radius={getCornerRadius(panel.layout)} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" style={{borderRadius:getCornerRadius(panel.layout)}} onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
 			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>{panel.screenWidth}×{panel.screenHeight}</span><i/><span>{colorMeta.colors?`${colorMeta.colors}C`:'RGB'}</span></div></div>
 			{(selected||adding||selectedHeader)&&<aside className="card-inspector" onClick={event=>event.stopPropagation()}>
 				{selectedHeader?<>
@@ -227,6 +232,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 						<label><span>Координаты</span><input type="checkbox" checked={header.showCoords} onChange={e=>patchHeader({showCoords:e.target.checked})} disabled={!header.visible}/></label>
 						<label><span>Дата</span><input type="checkbox" checked={header.showDate} onChange={e=>patchHeader({showDate:e.target.checked})} disabled={!header.visible}/></label>
 						<label><span>Время</span><input type="checkbox" checked={header.showTime} onChange={e=>patchHeader({showTime:e.target.checked})} disabled={!header.visible}/></label>
+						<label><span>Заряд батареи</span><input type="checkbox" checked={header.showBattery} onChange={e=>patchHeader({showBattery:e.target.checked})} disabled={!header.visible}/></label>
 					</div>
 					<div className="size-board">
 						<label>Свой заголовок<input value={header.title??''} placeholder={panel.cityName} disabled={!header.visible} onChange={e=>patchHeader({title:e.target.value.slice(0,48)||undefined})}/><small>Пустое поле — название города</small></label>
@@ -249,6 +255,16 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 					<input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={event=>void onPhotoFile(event.target.files?.[0])}/>
 					<button className="secondary-button" type="button" onClick={()=>photoInput.current?.click()}>{panel.layout.photoDataUrl?'Заменить фото':'Загрузить фото'}</button>
 					{panel.layout.photoDataUrl?<button className="text-button" type="button" onClick={clearPhoto}>Убрать фото</button>:null}
+				</div>}
+				{selected==='sensor'&&!adding&&<div className="inspector-toggles">
+					<p className="range-hint">Температура всегда на карточке. Остальное можно выключить.</p>
+					<label><span>Давление</span><input type="checkbox" checked={sensorFields.pressure} onChange={e=>patchSensor({pressure:e.target.checked})}/></label>
+					<label><span>Высота</span><input type="checkbox" checked={sensorFields.altitude} onChange={e=>patchSensor({altitude:e.target.checked})}/></label>
+					<label><span>Влажность</span><input type="checkbox" checked={sensorFields.humidity} onChange={e=>patchSensor({humidity:e.target.checked})}/></label>
+				</div>}
+				{selected==='sensorChart'&&!adding&&<div className="size-board">
+					<div><span>Диапазон</span><div className="size-pips range-pips">{sensorRangePips.map(item=><button key={item.id} type="button" className={getSensorChartRange(panel.layout)===item.id?'is-on':''} onClick={()=>setPanel({...panel,layout:withSensorChartRange(panel.layout,item.id)})}>{item.label}</button>)}</div></div>
+					<p className="range-hint">История с BMP/BME на устройстве. На сервере хранится максимум месяц. В превью — демо, пока панель не получит данные с ESP32.</p>
 				</div>}
 				{selected&&!adding&&isRangeBlock(selected)&&<div className="size-board">
 					<div><span>Диапазон</span><div className="size-pips range-pips">{rangePips.map(item=><button key={item.id} type="button" className={getCardRange(panel.layout,selected)===item.id?'is-on':''} onClick={()=>setPanel({...panel,layout:withCardRange(panel.layout,selected,item.id)})}>{item.label}</button>)}</div></div>

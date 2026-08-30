@@ -1,9 +1,10 @@
 import {normalizeDisplay, type ColorModeId} from './display'
+import {DEFAULT_SENSOR_CHART_RANGE, isSensorChartRange, type SensorChartRangeId} from './sensor-log'
 
 export const BLOCK_IDS = [
 	'current','overview','photo','weatherScene','clock','forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart',
 	'feels','humidity','pressure','precipitation','precipitationDetail','metrics','wind','sun','daylight','clouds',
-	'cloudLayers','visibility','dewPoint','uv','radiation','airQuality','sensor',
+	'cloudLayers','visibility','dewPoint','uv','radiation','airQuality','sensor','sensorChart',
 ] as const
 export type BlockId = (typeof BLOCK_IDS)[number]
 export type LanguageCode = 'RU'|'EN'
@@ -26,11 +27,14 @@ export type HeaderConfig = {
 	showCoords: boolean
 	showDate: boolean
 	showTime: boolean
+	showBattery: boolean
 	title?: string
 	style: HeaderStyle
 	size: HeaderSize
 }
-export const DEFAULT_HEADER: HeaderConfig = {visible:true,showCity:true,showCoords:true,showDate:true,showTime:true,style:'fill',size:'m'}
+export const DEFAULT_HEADER: HeaderConfig = {visible:true,showCity:true,showCoords:true,showDate:true,showTime:true,showBattery:true,style:'fill',size:'m'}
+export type SensorConfig = {pressure:boolean;altitude:boolean;humidity:boolean}
+export const DEFAULT_SENSOR: SensorConfig = {pressure:true,altitude:true,humidity:true}
 export const MIN_FONT_SIZE = 80
 export const MAX_FONT_SIZE = 200
 export const DEFAULT_FONT_SIZE = 115
@@ -72,6 +76,7 @@ export const MIN_CARD_GAP = 0
 export const MAX_CARD_GAP = 28
 export const DEFAULT_CARD_GAP = 10
 export const DEFAULT_SHOW_BORDER = true
+export const DEFAULT_SHOW_FRAME = true
 
 export function normalizeCardGap(value:unknown){
 	const n=Number(value)
@@ -80,6 +85,10 @@ export function normalizeCardGap(value:unknown){
 }
 
 export function normalizeShowBorder(value:unknown){
+	return value!==false
+}
+
+export function normalizeShowFrame(value:unknown){
 	return value!==false
 }
 
@@ -96,7 +105,20 @@ export const DEFAULT_CARD_RANGE: Record<RangeBlockId, TimeRangeId> = {
 	temperatureChart:'day', precipitationChart:'day', windChart:'day',
 }
 
-export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;header?:HeaderConfig}
+export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;sensorChartRange?:SensorChartRangeId;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;showFrame?:boolean;header?:HeaderConfig;sensor?:SensorConfig}
+
+export function getSensorChartRange(layout:PanelLayout):SensorChartRangeId{
+	return isSensorChartRange(layout.sensorChartRange)?layout.sensorChartRange:DEFAULT_SENSOR_CHART_RANGE
+}
+
+export function withSensorChartRange(layout:PanelLayout,range:SensorChartRangeId):PanelLayout{
+	if(range===DEFAULT_SENSOR_CHART_RANGE){
+		const next={...layout}
+		delete next.sensorChartRange
+		return next
+	}
+	return {...layout,sensorChartRange:range}
+}
 
 export function getCardRange(layout:PanelLayout,id:BlockId):TimeRangeId {
 	if(!isRangeBlock(id))return 'day'
@@ -123,6 +145,7 @@ export function normalizeHeader(value:unknown):HeaderConfig|undefined{
 		showCoords:raw.showCoords!==false,
 		showDate:raw.showDate!==false,
 		showTime:raw.showTime!==false,
+		showBattery:raw.showBattery!==false,
 		style:raw.style==='invert'||raw.style==='line'?raw.style:'fill',
 		size:raw.size==='s'||raw.size==='l'?raw.size:'m',
 	}
@@ -131,6 +154,20 @@ export function normalizeHeader(value:unknown):HeaderConfig|undefined{
 		if(title)header.title=title
 	}
 	return header
+}
+
+export function normalizeSensor(value:unknown):SensorConfig{
+	if(!value||typeof value!=='object')return {...DEFAULT_SENSOR}
+	const raw=value as Record<string,unknown>
+	return {
+		pressure:raw.pressure!==false,
+		altitude:raw.altitude!==false,
+		humidity:raw.humidity!==false,
+	}
+}
+
+export function getSensor(layout:PanelLayout):SensorConfig{
+	return {...DEFAULT_SENSOR,...layout.sensor}
 }
 
 export function getHeader(layout:PanelLayout):HeaderConfig{
@@ -151,11 +188,14 @@ export function getCardGap(layout:PanelLayout){
 export function getShowBorder(layout:PanelLayout){
 	return normalizeShowBorder(layout.showBorder)
 }
+export function getShowFrame(layout:PanelLayout){
+	return normalizeShowFrame(layout.showFrame)
+}
 export type GridPlacement = {id:BlockId;col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export type GridSlot = {col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export const DEFAULT_LAYOUT:PanelLayout={blocks:['current','clock','weatherScene','temperatureChart','precipitationChart'],spans:{weatherScene:2,temperatureChart:2,precipitationChart:2}}
 
-const DEFAULT_CARD_SPANS:Partial<Record<BlockId,CardSpan>>={overview:4,photo:2,weatherScene:2,clock:2,dailyForecast:4,weekStrip:4,weekTiles:4,weekRange:4,temperatureChart:2,precipitationChart:2,windChart:2,precipitationDetail:2,daylight:2,cloudLayers:2,radiation:2,airQuality:2,sensor:2}
+const DEFAULT_CARD_SPANS:Partial<Record<BlockId,CardSpan>>={overview:4,photo:2,weatherScene:2,clock:2,dailyForecast:4,weekStrip:4,weekTiles:4,weekRange:4,temperatureChart:2,precipitationChart:2,windChart:2,precipitationDetail:2,daylight:2,cloudLayers:2,radiation:2,airQuality:2,sensor:2,sensorChart:2}
 export function getDefaultCardSpan(id:BlockId):CardSpan{return DEFAULT_CARD_SPANS[id]??1}
 
 export function getCardSpan(layout:PanelLayout,id:BlockId):CardSpan{return layout.spans?.[id]??1}
@@ -227,7 +267,7 @@ export type EditablePanel={
 
 export function normalizeLayout(value:unknown):PanelLayout{
 	if(!value||typeof value!=='object')return DEFAULT_LAYOUT
-	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;header?:unknown}
+	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;sensorChartRange?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;showFrame?:unknown;header?:unknown;sensor?:unknown}
 	let candidates:unknown[]=Array.isArray(source.blocks)?source.blocks:[]
 	// Convert layouts stored by the first editor version.
 	if(!candidates.length&&Array.isArray(source.order)){
@@ -259,12 +299,15 @@ export function normalizeLayout(value:unknown):PanelLayout{
 	const photoDataUrl=typeof source.photoDataUrl==='string'&&/^data:image\/(?:png|jpeg|webp);base64,/.test(source.photoDataUrl)&&source.photoDataUrl.length<=1_500_000?source.photoDataUrl:undefined
 	const display=normalizeDisplay(source.screenWidth,source.screenHeight,source.colorMode)
 	const header=normalizeHeader(source.header)
+	const sensor=normalizeSensor(source.sensor)
 	const fontSize=normalizeFontSize(source.fontSize)
 	const theme=normalizeScreenTheme(source.theme)
 	const cornerRadius=normalizeCornerRadius(source.cornerRadius)
 	const cardGap=normalizeCardGap(source.cardGap)
 	const showBorder=normalizeShowBorder(source.showBorder)
-	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,...(header?{header}:{})}
+	const showFrame=normalizeShowFrame(source.showFrame)
+	const sensorChartRange=isSensorChartRange(source.sensorChartRange)&&source.sensorChartRange!==DEFAULT_SENSOR_CHART_RANGE?source.sensorChartRange:undefined
+	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(sensorChartRange?{sensorChartRange}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,showFrame,sensor,...(header?{header}:{})}
 	const layout:PanelLayout={blocks:normalizedBlocks,spans,...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 }
