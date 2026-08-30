@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto'
 import {parseDeviceBatteryPercent,parseDeviceSensor} from '@/lib/device-sensor'
-import {normalizeLayout} from '@/lib/panel-config'
+import {getCacheScreen,normalizeLayout} from '@/lib/panel-config'
 import {prisma} from '@/lib/prisma'
 import {incomingSensorPoints, mergeSensorLog} from '@/lib/sensor-log'
 import {getWeatherScreenData} from '@/lib/weather'
@@ -21,6 +21,12 @@ function nextRefreshSeconds(refreshMinutes:number,timezone:string) {
 	return hour>=23||hour<6 ? Math.max(regularSeconds,60*60) : regularSeconds
 }
 
+function localObservedAt(timezone:string) {
+	const parts=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date())
+	const get=(type:Intl.DateTimeFormatPartTypes)=>parts.find(part=>part.type===type)?.value??'00'
+	return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
+}
+
 export async function GET(request:Request,{params}:{params:Promise<{slug:string}>}) {
 	try {
 		const {slug}=await params
@@ -38,13 +44,15 @@ export async function GET(request:Request,{params}:{params:Promise<{slug:string}
 			await prisma.weatherPanel.update({where:{id:panel.id},data:{sensorLog:merged}})
 		}
 		weather.sensorTempLog=layout.blocks.includes('sensorChart')?merged:[]
+		const cacheScreen=getCacheScreen(layout)
+		if(!cacheScreen)weather.observedAt=localObservedAt(panel.timezone)
 		const etag=`"${createHash('sha256').update(JSON.stringify(weather)).digest('hex')}"`
 		const responseHeaders={
 			'Cache-Control':'no-store',
-			'ETag':etag,
 			'X-Next-Refresh-Seconds':String(nextRefreshSeconds(panel.refreshMinutes,panel.timezone)),
+			...(cacheScreen?{ETag:etag}:{}),
 		}
-		if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers:responseHeaders})
+		if(cacheScreen&&request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers:responseHeaders})
 		return weatherImageResponse(await renderWeatherDataImage(weather),responseHeaders)
 	} catch(error) {
 		console.error('Personal weather image failed:',error)

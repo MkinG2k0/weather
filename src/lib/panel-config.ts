@@ -1,5 +1,5 @@
 import {normalizeDisplay, type ColorModeId} from './display'
-import {DEFAULT_SENSOR_CHART_RANGE, parseSensorChartRange, type SensorChartRangeId} from './sensor-log'
+import {DEFAULT_SENSOR_CHART_FILTER, DEFAULT_SENSOR_CHART_RANGE, parseSensorChartFilter, parseSensorChartRange, type SensorChartFilterId, type SensorChartRangeId} from './sensor-log'
 
 export const BLOCK_IDS = [
 	'current','overview','photo','weatherScene','clock','forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart',
@@ -77,6 +77,7 @@ export const MAX_CARD_GAP = 28
 export const DEFAULT_CARD_GAP = 10
 export const DEFAULT_SHOW_BORDER = true
 export const DEFAULT_SHOW_FRAME = true
+export const DEFAULT_CACHE_SCREEN = true
 
 export function normalizeCardGap(value:unknown){
 	const n=Number(value)
@@ -89,6 +90,10 @@ export function normalizeShowBorder(value:unknown){
 }
 
 export function normalizeShowFrame(value:unknown){
+	return value!==false
+}
+
+export function normalizeCacheScreen(value:unknown){
 	return value!==false
 }
 
@@ -105,7 +110,7 @@ export const DEFAULT_CARD_RANGE: Record<RangeBlockId, TimeRangeId> = {
 	temperatureChart:'day', precipitationChart:'day', windChart:'day',
 }
 
-export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;sensorChartRange?:SensorChartRangeId;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;showFrame?:boolean;header?:HeaderConfig;sensor?:SensorConfig}
+export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;sensorChartRange?:SensorChartRangeId;sensorChartFilter?:SensorChartFilterId;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;showFrame?:boolean;cacheScreen?:boolean;header?:HeaderConfig;sensor?:SensorConfig}
 
 export function getSensorChartRange(layout:PanelLayout):SensorChartRangeId{
 	return parseSensorChartRange(layout.sensorChartRange)
@@ -118,6 +123,19 @@ export function withSensorChartRange(layout:PanelLayout,range:SensorChartRangeId
 		return next
 	}
 	return {...layout,sensorChartRange:range}
+}
+
+export function getSensorChartFilter(layout:PanelLayout):SensorChartFilterId{
+	return parseSensorChartFilter(layout.sensorChartFilter)
+}
+
+export function withSensorChartFilter(layout:PanelLayout,filter:SensorChartFilterId):PanelLayout{
+	if(filter===DEFAULT_SENSOR_CHART_FILTER){
+		const next={...layout}
+		delete next.sensorChartFilter
+		return next
+	}
+	return {...layout,sensorChartFilter:filter}
 }
 
 export function getCardRange(layout:PanelLayout,id:BlockId):TimeRangeId {
@@ -190,6 +208,9 @@ export function getShowBorder(layout:PanelLayout){
 }
 export function getShowFrame(layout:PanelLayout){
 	return normalizeShowFrame(layout.showFrame)
+}
+export function getCacheScreen(layout:PanelLayout){
+	return normalizeCacheScreen(layout.cacheScreen)
 }
 export type GridPlacement = {id:BlockId;col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export type GridSlot = {col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
@@ -267,7 +288,7 @@ export type EditablePanel={
 
 export function normalizeLayout(value:unknown):PanelLayout{
 	if(!value||typeof value!=='object')return DEFAULT_LAYOUT
-	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;sensorChartRange?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;showFrame?:unknown;header?:unknown;sensor?:unknown}
+	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;sensorChartRange?:unknown;sensorChartFilter?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;showFrame?:unknown;cacheScreen?:unknown;header?:unknown;sensor?:unknown}
 	let candidates:unknown[]=Array.isArray(source.blocks)?source.blocks:[]
 	// Convert layouts stored by the first editor version.
 	if(!candidates.length&&Array.isArray(source.order)){
@@ -306,9 +327,12 @@ export function normalizeLayout(value:unknown):PanelLayout{
 	const cardGap=normalizeCardGap(source.cardGap)
 	const showBorder=normalizeShowBorder(source.showBorder)
 	const showFrame=normalizeShowFrame(source.showFrame)
+	const cacheScreen=normalizeCacheScreen(source.cacheScreen)
 	const parsedRange=parseSensorChartRange(source.sensorChartRange)
 	const sensorChartRange=parsedRange!==DEFAULT_SENSOR_CHART_RANGE?parsedRange:undefined
-	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(sensorChartRange?{sensorChartRange}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,showFrame,sensor,...(header?{header}:{})}
+	const parsedFilter=parseSensorChartFilter(source.sensorChartFilter)
+	const sensorChartFilter=parsedFilter!==DEFAULT_SENSOR_CHART_FILTER?parsedFilter:undefined
+	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(sensorChartRange?{sensorChartRange}:{}),...(sensorChartFilter?{sensorChartFilter}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,showFrame,cacheScreen,sensor,...(header?{header}:{})}
 	const layout:PanelLayout={blocks:normalizedBlocks,spans,...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 }

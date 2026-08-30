@@ -16,6 +16,47 @@ export function parseSensorChartRange(value:unknown):SensorChartRangeId{
 	return isSensorChartRange(value)?value:DEFAULT_SENSOR_CHART_RANGE
 }
 
+export const SENSOR_CHART_FILTERS = ['raw','spikes','median'] as const
+export type SensorChartFilterId = (typeof SENSOR_CHART_FILTERS)[number]
+export const DEFAULT_SENSOR_CHART_FILTER: SensorChartFilterId = 'spikes'
+const SENSOR_SPIKE_JUMP_C = 2.5
+
+export function isSensorChartFilter(value:unknown):value is SensorChartFilterId{
+	return typeof value==='string'&&(SENSOR_CHART_FILTERS as readonly string[]).includes(value)
+}
+
+export function parseSensorChartFilter(value:unknown):SensorChartFilterId{
+	return isSensorChartFilter(value)?value:DEFAULT_SENSOR_CHART_FILTER
+}
+
+function median3(a:number,b:number,c:number){
+	return a+b+c-Math.min(a,b,c)-Math.max(a,b,c)
+}
+
+export function despikeSensorLog(points:SensorTempPoint[],jumpC=SENSOR_SPIKE_JUMP_C):SensorTempPoint[]{
+	if(points.length<3)return points
+	return points.filter((point,index,list)=>{
+		const prev=list[index-1]
+		const next=list[index+1]
+		if(!prev||!next)return true
+		return !(Math.abs(prev.c-next.c)<=jumpC&&Math.abs(point.c-prev.c)>jumpC&&Math.abs(point.c-next.c)>jumpC)
+	})
+}
+
+export function medianSmoothSensorLog(points:SensorTempPoint[]):SensorTempPoint[]{
+	if(points.length<3)return points
+	return points.map((point,index,list)=>{
+		if(index===0||index===list.length-1)return point
+		return {t:point.t,c:Math.round(median3(list[index-1].c,point.c,list[index+1].c)*100)/100}
+	})
+}
+
+export function applySensorChartFilter(points:SensorTempPoint[],filter:SensorChartFilterId):SensorTempPoint[]{
+	if(filter==='median')return medianSmoothSensorLog(points)
+	if(filter==='spikes')return despikeSensorLog(points)
+	return points
+}
+
 export function parseSensorLog(value:unknown):SensorTempPoint[]{
 	if(!Array.isArray(value))return []
 	const points:SensorTempPoint[]=[]

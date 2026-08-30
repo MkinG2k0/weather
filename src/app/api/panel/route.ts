@@ -1,7 +1,7 @@
 import {z} from 'zod'
 import {getCurrentUser} from '@/lib/auth'
 import {normalizeDisplay} from '@/lib/display'
-import {BLOCK_IDS,MAX_BLOCKS,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,normalizeSensor,normalizeShowBorder,normalizeShowFrame,type PanelLayout} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS,layoutFits,normalizeCacheScreen,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,normalizeSensor,normalizeShowBorder,normalizeShowFrame,type PanelLayout} from '@/lib/panel-config'
 import {serializePanel} from '@/lib/panel-data'
 import {prisma} from '@/lib/prisma'
 
@@ -28,9 +28,11 @@ const schema = z.object({
 		cardGap:z.number().int().min(0).max(28).optional(),
 		showBorder:z.boolean().optional(),
 		showFrame:z.boolean().optional(),
+		cacheScreen:z.boolean().optional(),
 		sensor:z.object({pressure:z.boolean(),altitude:z.boolean(),humidity:z.boolean()}).optional(),
 		ranges:z.record(z.string(),z.enum(['day','days3','week','weeks2','month'])).optional(),
 		sensorChartRange:z.enum(['hour','hours3','hours6','hours12','hours23','hours24','days3','week','month']).optional(),
+		sensorChartFilter:z.enum(['raw','spikes','median']).optional(),
 		header:z.object({
 			visible:z.boolean(),
 			showCity:z.boolean(),
@@ -56,7 +58,7 @@ export async function PATCH(request: Request) {
 		if (!panel) return Response.json({error: 'Панель не найдена'}, {status: 404})
 		const updated = await prisma.weatherPanel.update({where: {id: panel.id}, data: {
 			...rest,
-			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize), theme: normalizeScreenTheme(layout.theme), cornerRadius: normalizeCornerRadius(layout.cornerRadius), cardGap: normalizeCardGap(layout.cardGap), showBorder: normalizeShowBorder(layout.showBorder), showFrame: normalizeShowFrame(layout.showFrame), sensor: normalizeSensor(layout.sensor), sensorChartRange: layout.sensorChartRange==='hours23'?'hours24':layout.sensorChartRange},
+			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize), theme: normalizeScreenTheme(layout.theme), cornerRadius: normalizeCornerRadius(layout.cornerRadius), cardGap: normalizeCardGap(layout.cardGap), showBorder: normalizeShowBorder(layout.showBorder), showFrame: normalizeShowFrame(layout.showFrame), cacheScreen: normalizeCacheScreen(layout.cacheScreen), sensor: normalizeSensor(layout.sensor), sensorChartRange: layout.sensorChartRange==='hours23'?'hours24':layout.sensorChartRange, sensorChartFilter: layout.sensorChartFilter},
 		}})
 		return Response.json(serializePanel(updated))
 	} catch (error) {

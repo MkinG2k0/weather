@@ -1,8 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 import type {CSSProperties, ReactNode} from 'react'
 import {DESIGN_HEIGHT, DESIGN_WIDTH} from '@/lib/display'
-import {findEmptySlot,getCardGap,getCardRangeDays,getCornerRadius,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartRange,getShowBorder,getShowFrame,packBlockGrid,type BlockId,type CardRowSpan,type CardSpan} from '@/lib/panel-config'
-import {downsampleSensorLog,SENSOR_CHART_CAPTIONS,SENSOR_CHART_HOURS,sliceSensorLog} from '@/lib/sensor-log'
+import {findEmptySlot,getCardGap,getCardRangeDays,getCornerRadius,getFontSize,getHeader,getScreenTheme,getSensor,getSensorChartFilter,getSensorChartRange,getShowBorder,getShowFrame,packBlockGrid,type BlockId,type CardRowSpan,type CardSpan} from '@/lib/panel-config'
+import {applySensorChartFilter,downsampleSensorLog,SENSOR_CHART_CAPTIONS,SENSOR_CHART_HOURS,sliceSensorLog} from '@/lib/sensor-log'
 import {SCREEN_FONT_FAMILY} from '@/lib/screen-font'
 import {WeatherIcon} from '@/components/weather-icons'
 import type {WeatherDailyItem, WeatherHourlyPoint, WeatherScreenData} from '@/lib/weather'
@@ -215,7 +215,7 @@ function WeatherSceneCard({weather,compact,span}:{weather:WeatherScreenData;comp
 		</svg><div style={{marginTop:'auto',alignSelf:'flex-start',padding:'3px 6px',background:t.paper,border:`2px solid ${t.ink}`,borderRadius:t.inner,...text(compact?8:11,900)}}>{weather.weatherLabel}</div></div>
 }
 
-function chartColors(weather:WeatherScreenData){const t=paint(weather);return {stroke:t.fill,mark:t.accent,radius:Math.max(t.inner,t.radius?Math.round(t.radius*.55):0)}}
+function chartColors(weather:WeatherScreenData){const t=paint(weather);return {stroke:t.fill,mark:t.accent,radius:Math.round(Math.max(t.inner,t.radius?Math.round(t.radius*.55):0)/2)}}
 function chartSeries(weather:WeatherScreenData,id:BlockId){
 	const days=getCardRangeDays(weather.layout,id)
 	if(days<=3){
@@ -237,7 +237,7 @@ function SensorChartCard({weather,compact}:{weather:WeatherScreenData;compact:bo
 	const range=getSensorChartRange(weather.layout)
 	const hours=SENSOR_CHART_HOURS[range]
 	const caption=SENSOR_CHART_CAPTIONS[range][ru?'ru':'en']
-	const sliced=downsampleSensorLog(sliceSensorLog(weather.sensorTempLog??[],hours),compact?12:24)
+	const sliced=downsampleSensorLog(applySensorChartFilter(sliceSensorLog(weather.sensorTempLog??[],hours),getSensorChartFilter(weather.layout)),compact?12:24)
 	if(!sliced.length)	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ТЕМП. ДАТЧИКА':'SENSOR TEMP'} · ${caption}`}</CardTitle><div style={{...text(compact?11:14),marginTop:8}}>{ru?'НЕТ ЗАПИСЕЙ':'NO SAMPLES YET'}</div></div>
 	const toDisplay=(celsius:number)=>weather.temperatureUnit==='°F'?celsius*9/5+32:celsius
 	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 8px 5px':'12px',overflow:'hidden'}}><CardTitle compact={compact}>{`${ru?'ТЕМП. ДАТЧИКА':'SENSOR TEMP'} · ${caption}`}</CardTitle><SparkChart {...chartColors(weather)} values={sliced.map(point=>toDisplay(point.c))} labels={sliced.map(point=>sensorChartTick(point.t,weather.timezone,hours,ru))} unit="°"/></div>
