@@ -1,3 +1,5 @@
+import {normalizeDisplay, type ColorModeId} from './display'
+
 export const BLOCK_IDS = [
 	'current','overview','photo','weatherScene','clock','forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart',
 	'feels','humidity','pressure','precipitation','precipitationDetail','metrics','wind','sun','daylight','clouds',
@@ -8,37 +10,90 @@ export type LanguageCode = 'RU'|'EN'
 export type UnitSystemCode = 'METRIC'|'IMPERIAL'
 
 export const MAX_BLOCKS = 8
+export const GRID_COLS = 4
+export const GRID_ROWS = 2
 export const CARD_SPANS = [1,2,3,4] as const
+export const CARD_ROW_SPANS = [1,2] as const
 export type CardSpan = (typeof CARD_SPANS)[number]
-export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;photoDataUrl?:string}
+export type CardRowSpan = (typeof CARD_ROW_SPANS)[number]
+export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId}
+export type GridPlacement = {id:BlockId;col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
+export type GridSlot = {col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export const DEFAULT_LAYOUT:PanelLayout={blocks:['current','clock','weatherScene','temperatureChart','precipitationChart'],spans:{weatherScene:2,temperatureChart:2,precipitationChart:2}}
 
 const DEFAULT_CARD_SPANS:Partial<Record<BlockId,CardSpan>>={overview:4,photo:2,weatherScene:2,clock:2,dailyForecast:4,weekStrip:4,weekTiles:4,weekRange:4,temperatureChart:2,precipitationChart:2,windChart:2,precipitationDetail:2,daylight:2,cloudLayers:2,radiation:2,airQuality:2,sensor:2}
 export function getDefaultCardSpan(id:BlockId):CardSpan{return DEFAULT_CARD_SPANS[id]??1}
 
 export function getCardSpan(layout:PanelLayout,id:BlockId):CardSpan{return layout.spans?.[id]??1}
+export function getCardRowSpan(layout:PanelLayout,id:BlockId):CardRowSpan{return layout.rowSpans?.[id]??1}
 
-export function packBlockRows(layout:PanelLayout){
-	const rows:{blocks:BlockId[];used:number}[]=[]
-	for(const id of layout.blocks){
-		const span=getCardSpan(layout,id)
-		let row=rows.at(-1)
-		if(!row||row.used+span>4){row={blocks:[],used:0};rows.push(row)}
-		row.blocks.push(id);row.used+=span
-	}
-	return rows
+function cellFree(occ:boolean[][],col:number,row:number,colSpan:number,rowSpan:number){
+	if(col+colSpan>GRID_COLS||row+rowSpan>GRID_ROWS)return false
+	for(let r=row;r<row+rowSpan;r++)for(let c=col;c<col+colSpan;c++)if(occ[r][c])return false
+	return true
 }
 
-export function layoutFits(layout:PanelLayout){return packBlockRows(layout).length<=2}
+function occupy(occ:boolean[][],col:number,row:number,colSpan:number,rowSpan:number){
+	for(let r=row;r<row+rowSpan;r++)for(let c=col;c<col+colSpan;c++)occ[r][c]=true
+}
+
+export function packBlockGrid(layout:PanelLayout):GridPlacement[]|null{
+	const occ=Array.from({length:GRID_ROWS},()=>Array(GRID_COLS).fill(false))
+	const placements:GridPlacement[]=[]
+	for(const id of layout.blocks){
+		const colSpan=getCardSpan(layout,id)
+		const rowSpan=getCardRowSpan(layout,id)
+		let placed:GridPlacement|undefined
+		for(let row=0;row<=GRID_ROWS-rowSpan&&!placed;row++){
+			for(let col=0;col<=GRID_COLS-colSpan;col++){
+				if(!cellFree(occ,col,row,colSpan,rowSpan))continue
+				occupy(occ,col,row,colSpan,rowSpan)
+				placed={id,col:col+1,row:row+1,colSpan,rowSpan}
+				break
+			}
+		}
+		if(!placed)return null
+		placements.push(placed)
+	}
+	return placements
+}
+
+export function findEmptySlot(layout:PanelLayout):GridSlot|null{
+	const packed=packBlockGrid(layout)
+	if(!packed)return null
+	const occ=Array.from({length:GRID_ROWS},()=>Array(GRID_COLS).fill(false))
+	for(const item of packed)occupy(occ,item.col-1,item.row-1,item.colSpan,item.rowSpan)
+	for(let row=0;row<GRID_ROWS;row++){
+		for(let col=0;col<GRID_COLS;col++){
+			if(occ[row][col])continue
+			let width=1
+			while(col+width<GRID_COLS&&!occ[row][col+width])width++
+			return {col:col+1,row:row+1,colSpan:width as CardSpan,rowSpan:1}
+		}
+	}
+	return null
+}
+
+export function layoutFits(layout:PanelLayout){return packBlockGrid(layout)!==null}
+
+export function withCardSize(layout:PanelLayout,id:BlockId,size:{span?:CardSpan;rowSpan?:CardRowSpan}):PanelLayout{
+	const spans={...layout.spans}
+	const rowSpans={...layout.rowSpans}
+	if(size.span!==undefined){if(size.span===1)delete spans[id];else spans[id]=size.span}
+	if(size.rowSpan!==undefined){if(size.rowSpan===1)delete rowSpans[id];else rowSpans[id]=size.rowSpan}
+	return {...layout,spans,rowSpans:Object.keys(rowSpans).length?rowSpans:undefined}
+}
 
 export type EditablePanel={
 	id:string;name:string;slug:string;cityName:string;latitude:number;longitude:number;timezone:string
-	language:LanguageCode;unitSystem:UnitSystemCode;refreshMinutes:number;layout:PanelLayout;updatedAt:string
+	language:LanguageCode;unitSystem:UnitSystemCode;refreshMinutes:number
+	screenWidth:number;screenHeight:number;colorMode:ColorModeId
+	layout:PanelLayout;updatedAt:string
 }
 
 export function normalizeLayout(value:unknown):PanelLayout{
 	if(!value||typeof value!=='object')return DEFAULT_LAYOUT
-	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;photoDataUrl?:unknown}
+	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown}
 	let candidates:unknown[]=Array.isArray(source.blocks)?source.blocks:[]
 	// Convert layouts stored by the first editor version.
 	if(!candidates.length&&Array.isArray(source.order)){
@@ -51,9 +106,17 @@ export function normalizeLayout(value:unknown):PanelLayout{
 	if(source.showForecast===true&&!blocks.includes('forecast'))blocks.push('forecast')
 	const normalizedBlocks=(blocks.length?blocks:DEFAULT_LAYOUT.blocks).slice(0,MAX_BLOCKS)
 	const rawSpans=source.spans&&typeof source.spans==='object'?source.spans as Record<string,unknown>:{}
+	const rawRowSpans=source.rowSpans&&typeof source.rowSpans==='object'?source.rowSpans as Record<string,unknown>:{}
 	const spans:Partial<Record<BlockId,CardSpan>>={}
-	for(const id of normalizedBlocks){const span=rawSpans[id];if(CARD_SPANS.includes(span as CardSpan)&&span!==1)spans[id]=span as CardSpan}
+	const rowSpans:Partial<Record<BlockId,CardRowSpan>>={}
+	for(const id of normalizedBlocks){
+		const span=rawSpans[id]
+		if(CARD_SPANS.includes(span as CardSpan)&&span!==1)spans[id]=span as CardSpan
+		const rowSpan=rawRowSpans[id]
+		if(CARD_ROW_SPANS.includes(rowSpan as CardRowSpan)&&rowSpan!==1)rowSpans[id]=rowSpan as CardRowSpan
+	}
 	const photoDataUrl=typeof source.photoDataUrl==='string'&&/^data:image\/(?:png|jpeg|webp);base64,/.test(source.photoDataUrl)&&source.photoDataUrl.length<=1_500_000?source.photoDataUrl:undefined
-	const layout={blocks:normalizedBlocks,spans,...(photoDataUrl?{photoDataUrl}:{})}
-	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{}}
+	const display=normalizeDisplay(source.screenWidth,source.screenHeight,source.colorMode)
+	const layout:PanelLayout={blocks:normalizedBlocks,spans,...(Object.keys(rowSpans).length?{rowSpans}:{}),...(photoDataUrl?{photoDataUrl}:{}),screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
+	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 }

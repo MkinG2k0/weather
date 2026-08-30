@@ -1,4 +1,5 @@
 import type {DeviceSensorReading} from './device-sensor'
+import {buildDisplay, DEFAULT_COLOR_MODE, DEFAULT_SCREEN_HEIGHT, DEFAULT_SCREEN_WIDTH, type PanelDisplay} from './display'
 import {DEFAULT_LAYOUT, normalizeLayout, type LanguageCode, type PanelLayout, type UnitSystemCode} from './panel-config'
 
 export type WeatherSettings = {
@@ -9,6 +10,9 @@ export type WeatherSettings = {
 	language: LanguageCode
 	unitSystem: UnitSystemCode
 	layout: unknown
+	screenWidth?: number
+	screenHeight?: number
+	colorMode?: string
 }
 
 export const DEFAULT_WEATHER_SETTINGS: WeatherSettings = {
@@ -75,6 +79,7 @@ export type WeatherScreenData = {
 	hourly:WeatherHourlyPoint[]
 	daily:WeatherDailyItem[]
 	layout: PanelLayout
+	display: PanelDisplay
 	sensor: DeviceSensorReading | null
 }
 
@@ -139,6 +144,7 @@ export async function getWeatherScreenData(settings: WeatherSettings = DEFAULT_W
 	const dayFormatter=new Intl.DateTimeFormat(settings.language==='RU'?'ru-RU':'en-GB',{weekday:'short',timeZone:'UTC'})
 	const daily:WeatherDailyItem[]=data.daily.time.map((time,index)=>({day:dayFormatter.format(new Date(`${time}T12:00:00Z`)).toUpperCase(),weatherCode:data.daily.weather_code[index],weatherLabel:labelFor(settings.language,data.daily.weather_code[index]),high:Math.round(convertTemperature(data.daily.temperature_2m_max[index],settings.unitSystem)),low:Math.round(convertTemperature(data.daily.temperature_2m_min[index],settings.unitSystem)),precipitationProbability:Math.round(data.daily.precipitation_probability_max[index]??0),precipitationSum:Number(((data.daily.precipitation_sum[index]??0)*precipitationFactor).toFixed(1)),windSpeedMax:Math.round(convertWind(data.daily.wind_speed_10m_max[index],settings.unitSystem))}))
 	const aq=airData?.current
+	const layout=normalizeLayout(settings.layout)
 	return {
 		city:settings.cityName.toUpperCase(), timezone:settings.timezone, observedAt:data.current.time,
 		coordinates:`${Math.abs(settings.latitude).toFixed(2)} ${settings.latitude>=0?'N':'S'} / ${Math.abs(settings.longitude).toFixed(2)} ${settings.longitude>=0?'E':'W'}`,
@@ -161,7 +167,8 @@ export async function getWeatherScreenData(settings: WeatherSettings = DEFAULT_W
 		daylightDuration:formatDuration(data.daily.daylight_duration[0]),sunshineDuration:formatDuration(data.daily.sunshine_duration[0]),uvIndexClearSky:Number(data.daily.uv_index_clear_sky_max[0].toFixed(1)),windSpeedMax:Math.round(convertWind(data.daily.wind_speed_10m_max[0],settings.unitSystem)),windGustMax:Math.round(convertWind(data.daily.wind_gusts_10m_max[0],settings.unitSystem)),windDirectionDominant:windDirection(data.daily.wind_direction_10m_dominant[0],settings.language),shortwaveRadiationSum:Number(data.daily.shortwave_radiation_sum[0].toFixed(1)),evapotranspiration:Number((data.daily.et0_fao_evapotranspiration[0]*precipitationFactor).toFixed(1)),isDay:data.current.is_day===1,temperatureUnit:settings.unitSystem==='IMPERIAL'?'°F':'°C',
 		airQuality:aq?{europeanAqi:Math.round(aq.european_aqi),usAqi:Math.round(aq.us_aqi),pm10:Number(aq.pm10.toFixed(1)),pm25:Number(aq.pm2_5.toFixed(1)),carbonMonoxide:Math.round(aq.carbon_monoxide),nitrogenDioxide:Number(aq.nitrogen_dioxide.toFixed(1)),sulphurDioxide:Number(aq.sulphur_dioxide.toFixed(1)),ozone:Number(aq.ozone.toFixed(1))}:null,
 		windUnit:settings.unitSystem === 'IMPERIAL' ? 'mph' : 'м/с', labels:uiLabels[settings.language], forecast,hourly,daily,
-		layout:normalizeLayout(settings.layout),
+		layout,
+		display:buildDisplay(settings.screenWidth??layout.screenWidth??DEFAULT_SCREEN_WIDTH,settings.screenHeight??layout.screenHeight??DEFAULT_SCREEN_HEIGHT,settings.colorMode??layout.colorMode??DEFAULT_COLOR_MODE),
 		sensor:null,
 	}
 }

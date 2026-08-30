@@ -1,6 +1,7 @@
 import {WeatherScreen} from '@/components/weather-screen'
 import {ImageResponse} from 'next/og'
 import {createElement} from 'react'
+import {quantizePngToPalette} from './quantize-png'
 import {getWeatherScreenData, type WeatherScreenData, type WeatherSettings} from './weather'
 
 export async function renderWeatherImage(settings?: WeatherSettings) {
@@ -9,8 +10,15 @@ export async function renderWeatherImage(settings?: WeatherSettings) {
 }
 
 export async function renderWeatherDataImage(weather: WeatherScreenData) {
-	const image = new ImageResponse(createElement(WeatherScreen, {weather, generatedAtLocal:weather.observedAt}), {width: 800, height: 480})
-	return Buffer.from(await image.arrayBuffer())
+	const {width, height, colorMode} = weather.display
+	const image = new ImageResponse(createElement(WeatherScreen, {weather, generatedAtLocal:weather.observedAt}), {width, height})
+	const buffer = Buffer.from(await image.arrayBuffer())
+	try {
+		return quantizePngToPalette(buffer, colorMode)
+	} catch (error) {
+		console.error('Palette quantize failed:', error)
+		return buffer
+	}
 }
 
 export function weatherImageResponse(buffer: Buffer, headers?: HeadersInit) {
