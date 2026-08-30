@@ -1,7 +1,7 @@
 import {z} from 'zod'
 import {getCurrentUser} from '@/lib/auth'
 import {normalizeDisplay} from '@/lib/display'
-import {BLOCK_IDS,MAX_BLOCKS,layoutFits,normalizeFontSize,type PanelLayout} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,normalizeShowBorder,type PanelLayout} from '@/lib/panel-config'
 import {serializePanel} from '@/lib/panel-data'
 import {prisma} from '@/lib/prisma'
 
@@ -23,6 +23,10 @@ const schema = z.object({
 		rowSpans: z.record(z.string(),z.number().int().min(1).max(2)).refine(value=>Object.keys(value).every(id=>BLOCK_IDS.includes(id as typeof BLOCK_IDS[number])),'Неизвестная карточка').optional(),
 		photoDataUrl:z.string().max(1_500_000).regex(/^data:image\/(?:png|jpeg|webp);base64,/).optional(),
 		fontSize:z.number().int().min(80).max(200).optional(),
+		theme:z.enum(['classic','night','poster','air','rail']).optional(),
+		cornerRadius:z.number().int().min(0).max(32).optional(),
+		cardGap:z.number().int().min(0).max(28).optional(),
+		showBorder:z.boolean().optional(),
 		ranges:z.record(z.string(),z.enum(['day','days3','week','weeks2','month'])).optional(),
 		header:z.object({
 			visible:z.boolean(),
@@ -48,7 +52,7 @@ export async function PATCH(request: Request) {
 		if (!panel) return Response.json({error: 'Панель не найдена'}, {status: 404})
 		const updated = await prisma.weatherPanel.update({where: {id: panel.id}, data: {
 			...rest,
-			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize)},
+			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize), theme: normalizeScreenTheme(layout.theme), cornerRadius: normalizeCornerRadius(layout.cornerRadius), cardGap: normalizeCardGap(layout.cardGap), showBorder: normalizeShowBorder(layout.showBorder)},
 		}})
 		return Response.json(serializePanel(updated))
 	} catch (error) {

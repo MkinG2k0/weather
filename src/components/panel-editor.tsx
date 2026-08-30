@@ -6,7 +6,7 @@ import {closestCorners,DndContext,KeyboardSensor,PointerSensor,useSensor,useSens
 import {arrayMove,rectSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
 import {WeatherScreen,renderPanelCard} from '@/components/weather-screen'
 import {buildDisplay,COLOR_MODES,COLOR_MODE_IDS,MIN_SCREEN,MAX_SCREEN,sizePresetId,SIZE_PRESETS,type ColorModeId} from '@/lib/display'
-import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_FONT_SIZE,MIN_FONT_SIZE,findEmptySlot,getCardRange,getCardRowSpan,getCardSpan,getDefaultCardSpan,getFontSize,getHeader,isRangeBlock,layoutFits,normalizeFontSize,withCardRange,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type TimeRangeId} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_CARD_GAP,MAX_CORNER_RADIUS,MAX_FONT_SIZE,MIN_CARD_GAP,MIN_CORNER_RADIUS,MIN_FONT_SIZE,SCREEN_THEME_IDS,SCREEN_THEMES,findEmptySlot,getCardGap,getCardRange,getCardRowSpan,getCardSpan,getCornerRadius,getDefaultCardSpan,getFontSize,getHeader,getScreenTheme,getShowBorder,isRangeBlock,layoutFits,normalizeCardGap,normalizeCornerRadius,normalizeFontSize,normalizeScreenTheme,withCardRange,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type ScreenThemeId,type TimeRangeId} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
@@ -26,6 +26,32 @@ const GAP=10
 
 function cardBox(span:CardSpan,rowSpan:CardRowSpan){return {width:span*CELL+(span-1)*GAP,height:rowSpan*CELL+(rowSpan-1)*GAP}}
 
+const MAX_PHOTO_DATA_URL=1_400_000
+async function fileToPhotoDataUrl(file:File){
+	if(!/^image\/(png|jpeg|webp)$/.test(file.type))throw new Error('Нужен JPEG, PNG или WebP')
+	const bitmap=await createImageBitmap(file)
+	const scale=Math.min(1,960/Math.max(bitmap.width,bitmap.height))
+	const width=Math.max(1,Math.round(bitmap.width*scale))
+	const height=Math.max(1,Math.round(bitmap.height*scale))
+	const canvas=document.createElement('canvas')
+	canvas.width=width
+	canvas.height=height
+	const ctx=canvas.getContext('2d')
+	if(!ctx)throw new Error('Не удалось обработать фото')
+	ctx.imageSmoothingEnabled=true
+	ctx.imageSmoothingQuality='high'
+	ctx.drawImage(bitmap,0,0,width,height)
+	bitmap.close()
+	let quality=0.86
+	let url=canvas.toDataURL('image/jpeg',quality)
+	while(url.length>MAX_PHOTO_DATA_URL&&quality>0.42){
+		quality-=0.08
+		url=canvas.toDataURL('image/jpeg',quality)
+	}
+	if(url.length>MAX_PHOTO_DATA_URL)throw new Error('Файл слишком большой. Выберите другое фото.')
+	return url
+}
+
 function CardThumb({id,weather,span,rowSpan}:{id:BlockId;weather:WeatherScreenData;span:CardSpan;rowSpan:CardRowSpan}){
 	const box=cardBox(span,rowSpan)
 	const scale=Math.min(156/box.width,(rowSpan===2?128:78)/box.height)
@@ -36,10 +62,10 @@ function CardThumb({id,weather,span,rowSpan}:{id:BlockId;weather:WeatherScreenDa
 	</div>
 }
 
-function InlineSortableBlock({id,selected,onSelect,previewScale,children}:{id:BlockId;selected:boolean;onSelect:()=>void;previewScale:number;children:ReactNode}){
+function InlineSortableBlock({id,selected,onSelect,previewScale,radius,children}:{id:BlockId;selected:boolean;onSelect:()=>void;previewScale:number;radius:number;children:ReactNode}){
 	const {attributes,listeners,setNodeRef,transform,isDragging}=useSortable({id,animateLayoutChanges:()=>false})
 	const scale=Math.max(previewScale,.12)
-	const style=transform?{transform:`translate3d(${transform.x/scale}px,${transform.y/scale}px,0)`,zIndex:80}:undefined
+	const style=transform?{transform:`translate3d(${transform.x/scale}px,${transform.y/scale}px,0)`,zIndex:80,borderRadius:radius}:{borderRadius:radius}
 	return <div ref={setNodeRef} style={style} className={`inline-sortable${isDragging?' is-dragging':''}${selected?' is-selected':''}`} {...attributes} {...listeners} aria-label={`${blockNames[id]}. Перетащите, чтобы сменить место`} onClick={(event:MouseEvent)=>{event.stopPropagation();onSelect()}}>
 		<div className="inline-card-content">{children}</div>
 	</div>
@@ -52,6 +78,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const [selectedId,setSelectedId]=useState<BlockId|null>(null);const [selectedHeader,setSelectedHeader]=useState(false);const [adding,setAdding]=useState(false)
 	const [dragId,setDragId]=useState<BlockId|null>(null)
 	const [customSize,setCustomSize]=useState(()=>sizePresetId(initialPanel.screenWidth,initialPanel.screenHeight)==='custom')
+	const photoInput=useRef<HTMLInputElement>(null)
 	const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
 	const baseUrl=`${origin}/d/${panel.slug}`;const screenUrl=`${baseUrl}/screen.png?v=${encodeURIComponent(panel.updatedAt)}`
 
@@ -130,6 +157,21 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	async function logout(){await fetch('/api/auth/logout',{method:'POST'});router.refresh()}
 	function selectHeader(){setSelectedHeader(true);setSelectedId(null);setAdding(false)}
 	function patchHeader(next:Partial<HeaderConfig>){setPanel({...panel,layout:{...panel.layout,header:{...getHeader(panel.layout),...next}}})}
+	async function onPhotoFile(file:File|undefined){
+		if(!file)return
+		try{
+			const photoDataUrl=await fileToPhotoDataUrl(file)
+			setPanel({...panel,layout:{...panel.layout,photoDataUrl}})
+			setMessage('Фото добавлено. Сохраните изменения, чтобы оно попало на PNG.')
+		}catch(error){
+			setMessage(error instanceof Error?error.message:'Не удалось загрузить фото')
+		}
+		if(photoInput.current)photoInput.current.value=''
+	}
+	function clearPhoto(){
+		const {photoDataUrl:_removed,...layout}=panel.layout
+		setPanel({...panel,layout})
+	}
 	const previewWeather={...weather,layout:panel.layout,display:buildDisplay(panel.screenWidth,panel.screenHeight,panel.colorMode)}
 	const refreshValue=refreshPresets.includes(panel.refreshMinutes)?String(panel.refreshMinutes):'custom'
 	const sizePreset=sizePresetId(panel.screenWidth,panel.screenHeight)
@@ -159,7 +201,11 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 				{(customSize||sizePreset==='custom')&&<div className="two-columns"><label>Ширина, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenWidth} onChange={e=>applyDisplay({screenWidth:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label><label>Высота, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenHeight} onChange={e=>applyDisplay({screenHeight:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label></div>}
 				<label>Цвета панели<select value={panel.colorMode} onChange={e=>applyDisplay({colorMode:e.target.value as ColorModeId})}>{COLOR_MODE_IDS.map(id=><option key={id} value={id}>{COLOR_MODES[id].label}</option>)}</select></label>
 				<div className="palette-row" aria-hidden="true">{(colorMeta.palette.length?colorMeta.palette:['#1d4ed8','#c45c26','#f2c200','#15803d','#11130f','#f6f1e6']).map(hex=><i key={hex} style={{background:hex}}/>)}</div>
+				<label>Тема экрана<select value={getScreenTheme(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,theme:normalizeScreenTheme(e.target.value as ScreenThemeId)}})}>{SCREEN_THEME_IDS.map(id=><option key={id} value={id}>{SCREEN_THEMES[id].label}</option>)}</select></label>
 				<label>Размер шрифта<input type="range" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} step={5} value={getFontSize(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,fontSize:normalizeFontSize(Number(e.target.value))}})}/><small>{getFontSize(panel.layout)}%</small></label>
+				<label>Закругление<input type="range" min={MIN_CORNER_RADIUS} max={MAX_CORNER_RADIUS} step={2} value={getCornerRadius(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cornerRadius:normalizeCornerRadius(Number(e.target.value))}})}/><small>{getCornerRadius(panel.layout)} px</small></label>
+				<label>Зазор между карточками<input type="range" min={MIN_CARD_GAP} max={MAX_CARD_GAP} step={1} value={getCardGap(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,cardGap:normalizeCardGap(Number(e.target.value))}})}/><small>{getCardGap(panel.layout)} px</small></label>
+				<label className="chrome-toggle"><span>Рамки карточек</span><input type="checkbox" checked={getShowBorder(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,showBorder:e.target.checked}})}/></label>
 				<p className="section-note">{panel.screenWidth}×{panel.screenHeight} · {colorMeta.colors?`${colorMeta.colors} цвета`:'RGB'} · PNG квантуется в выбранную палитру</p>
 				<button className="text-button header-edit-link" type="button" onClick={selectHeader}>Настроить шапку экрана</button>
 			</section>
@@ -169,7 +215,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b><small className="layout-hint">Карточки можно перетаскивать. Удаление — в настройках выбранной карточки.</small></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="preview-stage" ref={previewStage}>
 			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className={`screen-bezel component-host${dragId?' is-reordering':''}`} ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}><div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={clearDrag}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} previewScale={previewScale} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
+				<DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={clearDrag}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} previewScale={previewScale} radius={getCornerRadius(panel.layout)} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" style={{borderRadius:getCornerRadius(panel.layout)}} onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
 			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>{panel.screenWidth}×{panel.screenHeight}</span><i/><span>{colorMeta.colors?`${colorMeta.colors}C`:'RGB'}</span></div></div>
 			{(selected||adding||selectedHeader)&&<aside className="card-inspector" onClick={event=>event.stopPropagation()}>
 				{selectedHeader?<>
@@ -196,6 +242,13 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 					<div><span>Ширина</span><div className="size-pips">{CARD_SPANS.map(value=><button key={value} type="button" className={selectedSpan===value?'is-on':''} disabled={!layoutFits(withCardSize(panel.layout,selected,{span:value}))} onClick={()=>resizeBlock(selected,{span:value})}>{value}/4</button>)}</div></div>
 					<div><span>Высота</span><div className="size-pips pair-pips">{CARD_ROW_SPANS.map(value=><button key={value} type="button" className={selectedRowSpan===value?'is-on':''} disabled={!layoutFits(withCardSize(panel.layout,selected,{rowSpan:value}))} onClick={()=>resizeBlock(selected,{rowSpan:value})}>{value}/2</button>)}</div></div>
 					<button className="text-button danger inspector-remove" type="button" onClick={()=>removeBlock(selected)} disabled={panel.layout.blocks.length<=1}>Удалить карточку</button>
+				</div>}
+				{selected==='photo'&&!adding&&<div className="size-board">
+					<p className="range-hint">Фото заполняет карточку по короткой стороне и обрезается по краям, пропорции не растягиваются.</p>
+					{panel.layout.photoDataUrl?<img className="photo-inspector-preview" src={panel.layout.photoDataUrl} alt=""/>:null}
+					<input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={event=>void onPhotoFile(event.target.files?.[0])}/>
+					<button className="secondary-button" type="button" onClick={()=>photoInput.current?.click()}>{panel.layout.photoDataUrl?'Заменить фото':'Загрузить фото'}</button>
+					{panel.layout.photoDataUrl?<button className="text-button" type="button" onClick={clearPhoto}>Убрать фото</button>:null}
 				</div>}
 				{selected&&!adding&&isRangeBlock(selected)&&<div className="size-board">
 					<div><span>Диапазон</span><div className="size-pips range-pips">{rangePips.map(item=><button key={item.id} type="button" className={getCardRange(panel.layout,selected)===item.id?'is-on':''} onClick={()=>setPanel({...panel,layout:withCardRange(panel.layout,selected,item.id)})}>{item.label}</button>)}</div></div>

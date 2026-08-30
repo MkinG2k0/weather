@@ -34,11 +34,53 @@ export const DEFAULT_HEADER: HeaderConfig = {visible:true,showCity:true,showCoor
 export const MIN_FONT_SIZE = 80
 export const MAX_FONT_SIZE = 200
 export const DEFAULT_FONT_SIZE = 115
+export const MIN_CORNER_RADIUS = 0
+export const MAX_CORNER_RADIUS = 32
+export const DEFAULT_CORNER_RADIUS = 0
+export const SCREEN_THEME_IDS = ['classic','night','poster','air','rail'] as const
+export type ScreenThemeId = (typeof SCREEN_THEME_IDS)[number]
+export const DEFAULT_SCREEN_THEME: ScreenThemeId = 'classic'
+export const SCREEN_THEMES: Record<ScreenThemeId,{label:string}> = {
+	classic:{label:'Классика · рамки'},
+	night:{label:'Ночь · инверсия'},
+	poster:{label:'Плакат · заливка'},
+	air:{label:'Воздух · тонкие линии'},
+	rail:{label:'Рейка · акцент слева'},
+}
 
 export function normalizeFontSize(value:unknown){
 	const n=Number(value)
 	if(!Number.isFinite(n))return DEFAULT_FONT_SIZE
 	return Math.round(Math.min(MAX_FONT_SIZE,Math.max(MIN_FONT_SIZE,n))/5)*5
+}
+
+export function isScreenTheme(value:unknown):value is ScreenThemeId{
+	return typeof value==='string'&&(SCREEN_THEME_IDS as readonly string[]).includes(value)
+}
+
+export function normalizeScreenTheme(value:unknown):ScreenThemeId{
+	return isScreenTheme(value)?value:DEFAULT_SCREEN_THEME
+}
+
+export function normalizeCornerRadius(value:unknown){
+	const n=Number(value)
+	if(!Number.isFinite(n))return DEFAULT_CORNER_RADIUS
+	return Math.round(Math.min(MAX_CORNER_RADIUS,Math.max(MIN_CORNER_RADIUS,n))/2)*2
+}
+
+export const MIN_CARD_GAP = 0
+export const MAX_CARD_GAP = 28
+export const DEFAULT_CARD_GAP = 10
+export const DEFAULT_SHOW_BORDER = true
+
+export function normalizeCardGap(value:unknown){
+	const n=Number(value)
+	if(!Number.isFinite(n))return DEFAULT_CARD_GAP
+	return Math.round(Math.min(MAX_CARD_GAP,Math.max(MIN_CARD_GAP,n)))
+}
+
+export function normalizeShowBorder(value:unknown){
+	return value!==false
 }
 
 export const TIME_RANGES = ['day','days3','week','weeks2','month'] as const
@@ -54,7 +96,7 @@ export const DEFAULT_CARD_RANGE: Record<RangeBlockId, TimeRangeId> = {
 	temperatureChart:'day', precipitationChart:'day', windChart:'day',
 }
 
-export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;header?:HeaderConfig}
+export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;theme?:ScreenThemeId;cornerRadius?:number;cardGap?:number;showBorder?:boolean;header?:HeaderConfig}
 
 export function getCardRange(layout:PanelLayout,id:BlockId):TimeRangeId {
 	if(!isRangeBlock(id))return 'day'
@@ -96,6 +138,18 @@ export function getHeader(layout:PanelLayout):HeaderConfig{
 }
 export function getFontSize(layout:PanelLayout){
 	return normalizeFontSize(layout.fontSize)
+}
+export function getScreenTheme(layout:PanelLayout){
+	return normalizeScreenTheme(layout.theme)
+}
+export function getCornerRadius(layout:PanelLayout){
+	return normalizeCornerRadius(layout.cornerRadius)
+}
+export function getCardGap(layout:PanelLayout){
+	return normalizeCardGap(layout.cardGap)
+}
+export function getShowBorder(layout:PanelLayout){
+	return normalizeShowBorder(layout.showBorder)
 }
 export type GridPlacement = {id:BlockId;col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
 export type GridSlot = {col:number;row:number;colSpan:CardSpan;rowSpan:CardRowSpan}
@@ -173,7 +227,7 @@ export type EditablePanel={
 
 export function normalizeLayout(value:unknown):PanelLayout{
 	if(!value||typeof value!=='object')return DEFAULT_LAYOUT
-	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;header?:unknown}
+	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;theme?:unknown;cornerRadius?:unknown;cardGap?:unknown;showBorder?:unknown;header?:unknown}
 	let candidates:unknown[]=Array.isArray(source.blocks)?source.blocks:[]
 	// Convert layouts stored by the first editor version.
 	if(!candidates.length&&Array.isArray(source.order)){
@@ -206,7 +260,11 @@ export function normalizeLayout(value:unknown):PanelLayout{
 	const display=normalizeDisplay(source.screenWidth,source.screenHeight,source.colorMode)
 	const header=normalizeHeader(source.header)
 	const fontSize=normalizeFontSize(source.fontSize)
-	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,...(header?{header}:{})}
+	const theme=normalizeScreenTheme(source.theme)
+	const cornerRadius=normalizeCornerRadius(source.cornerRadius)
+	const cardGap=normalizeCardGap(source.cardGap)
+	const showBorder=normalizeShowBorder(source.showBorder)
+	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,theme,cornerRadius,cardGap,showBorder,...(header?{header}:{})}
 	const layout:PanelLayout={blocks:normalizedBlocks,spans,...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 }

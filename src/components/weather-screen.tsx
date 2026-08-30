@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import type {CSSProperties, ReactNode} from 'react'
 import {DESIGN_HEIGHT, DESIGN_WIDTH} from '@/lib/display'
-import {findEmptySlot,getCardRangeDays,getFontSize,getHeader,packBlockGrid,type BlockId,type CardRowSpan,type CardSpan} from '@/lib/panel-config'
+import {findEmptySlot,getCardGap,getCardRangeDays,getCornerRadius,getFontSize,getHeader,getScreenTheme,getShowBorder,packBlockGrid,type BlockId,type CardRowSpan,type CardSpan} from '@/lib/panel-config'
 import {SCREEN_FONT_FAMILY} from '@/lib/screen-font'
 import {WeatherIcon} from '@/components/weather-icons'
 import type {WeatherDailyItem, WeatherHourlyPoint, WeatherScreenData} from '@/lib/weather'
@@ -14,8 +14,25 @@ type WeatherScreenProps = {
 	renderHeader?: (content:ReactNode)=>ReactNode
 	addSlot?: ReactNode
 }
+function paint(weather:WeatherScreenData){
+	const d=weather.display
+	const theme=getScreenTheme(weather.layout)
+	const radius=getCornerRadius(weather.layout)
+	const inner=Math.max(0,Math.round(radius*.4))
+	if(theme==='night')return {theme,radius,inner,paper:d.ink,ink:d.paper,accent:d.paper,fill:d.paper,headerBg:d.paper,headerFg:d.ink,cardBg:d.ink,cardFg:d.paper,sky:d.ink,ground:d.paper,frame:d.paper}
+	if(theme==='poster')return {theme,radius,inner,paper:d.paper,ink:d.ink,accent:d.paper,fill:d.paper,headerBg:d.headerBg,headerFg:d.headerFg,cardBg:d.ink,cardFg:d.paper,sky:d.ink,ground:d.paper,frame:d.headerBg}
+	return {theme,radius,inner,paper:d.paper,ink:d.ink,accent:d.accent,fill:d.fill,headerBg:d.headerBg,headerFg:d.headerFg,cardBg:d.paper,cardFg:d.ink,sky:d.sky,ground:d.ground,frame:d.headerBg}
+}
+function cardBorder(weather:WeatherScreenData):CSSProperties{
+	if(!getShowBorder(weather.layout))return {border:'none'}
+	const t=paint(weather)
+	if(t.theme==='air')return {border:`1px solid ${t.ink}`}
+	if(t.theme==='rail')return {border:`1px solid ${t.ink}`,borderLeft:`10px solid ${t.ink}`}
+	return {border:`3px solid ${t.ink}`}
+}
 function panelBox(weather:WeatherScreenData, extra?:CSSProperties): CSSProperties {
-	return {display:'flex', flex:1, minWidth:0, minHeight:0, overflow:'hidden', border:`3px solid ${weather.display.ink}`, background:weather.display.paper, ...extra}
+	const t=paint(weather)
+	return {display:'flex', flex:1, minWidth:0, minHeight:0, overflow:'hidden', background:t.cardBg, color:t.cardFg, borderRadius:t.radius, ...cardBorder(weather), ...extra}
 }
 let fontMul=1
 function applyFontScale(weather:WeatherScreenData){fontMul=getFontSize(weather.layout)/100}
@@ -29,7 +46,7 @@ function Metric({label,value,compact=false}:{label:string;value:string;compact?:
 function CurrentCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',justifyContent:'center',padding:compact?'8px 10px 6px':'12px 18px',overflow:'hidden'}}>
 		<div style={{display:'flex',alignItems:'flex-start',minWidth:0,overflow:'hidden'}}><div style={{...text(compact?52:86,900),lineHeight:.85,letterSpacing:compact?-2:-6}}>{weather.temperature}</div><div style={{...text(compact?22:36,900),lineHeight:1}}>°</div></div>
-		<div style={{display:'flex',alignItems:'center',gap:compact?6:10,marginTop:compact?5:12,minWidth:0,overflow:'hidden'}}><div style={{width:compact?36:56,height:compact?10:16,flexShrink:0,display:'flex',background:weather.display.accent}}/><div style={{...text(compact?11:15,900),letterSpacing:.7,color:weather.display.accent,overflow:'hidden'}}>{weather.weatherLabel}</div></div>
+		<div style={{display:'flex',alignItems:'center',gap:compact?6:10,marginTop:compact?5:12,minWidth:0,overflow:'hidden'}}><div style={{width:compact?36:56,height:compact?10:16,flexShrink:0,display:'flex',background:paint(weather).accent}}/><div style={{...text(compact?11:15,900),letterSpacing:.7,color:paint(weather).accent,overflow:'hidden'}}>{weather.weatherLabel}</div></div>
 		<div style={{...text(compact?9:12),marginTop:compact?5:8,overflow:'hidden'}}>{`${weather.labels.feels} ${weather.feelsLike}° · ${weather.labels.high} ${weather.high}° / ${weather.labels.low} ${weather.low}°`}</div>
 	</div>
 }
@@ -73,14 +90,14 @@ function ForecastCard({weather,compact}:{weather:WeatherScreenData;compact:boole
 function FeelsCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',justifyContent:'center',padding:compact?'8px 12px 8px':'16px'}}>
 		<div style={{...text(compact?8:11,900),letterSpacing:compact?1:1.5}}>{weather.labels.feels}</div><div style={{...text(compact?42:72,900),lineHeight:1,marginTop:compact?4:10}}>{weather.feelsLike}°</div>
-		<div style={{display:'flex',height:3,background:weather.display.fill,margin:compact?'8px 0 6px':'20px 0 14px'}}/><div style={{display:'flex',justifyContent:'space-between',gap:8}}><Metric compact={compact} label={weather.labels.low} value={`${weather.low}°`}/><Metric compact={compact} label={weather.labels.high} value={`${weather.high}°`}/></div>
+		<div style={{display:'flex',height:3,background:paint(weather).fill,margin:compact?'8px 0 6px':'20px 0 14px'}}/><div style={{display:'flex',justifyContent:'space-between',gap:8}}><Metric compact={compact} label={weather.labels.low} value={`${weather.low}°`}/><Metric compact={compact} label={weather.labels.high} value={`${weather.high}°`}/></div>
 	</div>
 }
 
 function HumidityCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',alignItems:'center',justifyContent:'center',padding:compact?'8px 12px 8px':'16px'}}>
 		<div style={{...text(compact?8:11,900),letterSpacing:compact?1:1.5}}>{weather.labels.humidity}</div><div style={{display:'flex',alignItems:'baseline',marginTop:compact?5:13}}><div style={{...text(compact?44:72,900),lineHeight:1}}>{weather.humidity}</div><div style={text(compact?15:22,900)}>%</div></div>
-		<div style={{display:'flex',width:'100%',height:compact?10:16,marginTop:compact?9:22,border:'3px solid currentColor'}}><div style={{display:'flex',width:`${weather.humidity}%`,background:weather.display.fill}}/></div>
+		<div style={{display:'flex',width:'100%',height:compact?10:16,marginTop:compact?9:22,border:'3px solid currentColor',borderRadius:paint(weather).inner,overflow:'hidden'}}><div style={{display:'flex',width:`${weather.humidity}%`,background:paint(weather).fill}}/></div>
 	</div>
 }
 
@@ -88,21 +105,21 @@ function PressureCard({weather,compact}:{weather:WeatherScreenData;compact:boole
 	const [value,...unit]=weather.pressure.split(' ')
 	return <div style={{...panelBox(weather),flexDirection:'column',alignItems:'center',justifyContent:'center',padding:compact?'8px 12px 8px':'16px'}}>
 		<div style={{...text(compact?8:11,900),letterSpacing:compact?1:1.5}}>{weather.labels.pressure}</div><div style={{...text(compact?40:62,900),lineHeight:1,marginTop:compact?6:16}}>{value}</div><div style={{...text(compact?10:14,900),marginTop:compact?3:8}}>{unit.join(' ')}</div>
-		<div style={{width:compact?54:86,height:3,display:'flex',background:weather.display.fill,marginTop:compact?9:24}}/>
+		<div style={{width:compact?54:86,height:3,display:'flex',background:paint(weather).fill,marginTop:compact?9:24}}/>
 	</div>
 }
 
 function PrecipitationCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',alignItems:'center',justifyContent:'center',padding:compact?'8px 12px 8px':'16px'}}>
 		<div style={{...text(compact?8:11,900),letterSpacing:compact?1:1.5}}>{weather.labels.precipitation}</div><div style={{display:'flex',alignItems:'baseline',marginTop:compact?5:14}}><div style={{...text(compact?44:72,900),lineHeight:1}}>{weather.precipitationProbability}</div><div style={text(compact?15:22,900)}>%</div></div>
-		<div style={{display:'flex',gap:compact?3:5,marginTop:compact?9:24}}>{[20,40,60,80].map(level=><div key={level} style={{width:compact?12:19,height:compact?12:19,border:compact?'2px solid currentColor':'3px solid currentColor',background:weather.precipitationProbability>=level?weather.display.fill:weather.display.paper}}/>)}</div>
+		<div style={{display:'flex',gap:compact?3:5,marginTop:compact?9:24}}>{[20,40,60,80].map(level=><div key={level} style={{width:compact?12:19,height:compact?12:19,border:compact?'2px solid currentColor':'3px solid currentColor',borderRadius:paint(weather).inner,background:weather.precipitationProbability>=level?paint(weather).fill:paint(weather).paper}}/>)}</div>
 	</div>
 }
 
 function MetricsCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',justifyContent:'space-between',padding:compact?'8px 12px 8px':'16px 18px'}}>
-		<Metric compact={compact} label={weather.labels.humidity} value={`${weather.humidity}%`}/><div style={{display:'flex',height:compact?2:3,background:weather.display.fill}}/>
-		<Metric compact={compact} label={weather.labels.pressure} value={weather.pressure}/><div style={{display:'flex',height:compact?2:3,background:weather.display.fill}}/>
+		<Metric compact={compact} label={weather.labels.humidity} value={`${weather.humidity}%`}/><div style={{display:'flex',height:compact?2:3,background:paint(weather).fill}}/>
+		<Metric compact={compact} label={weather.labels.pressure} value={weather.pressure}/><div style={{display:'flex',height:compact?2:3,background:paint(weather).fill}}/>
 		<Metric compact={compact} label={weather.labels.precipitation} value={`${weather.precipitationProbability}%`}/>
 	</div>
 }
@@ -111,14 +128,14 @@ function WindCard({weather,compact}:{weather:WeatherScreenData;compact:boolean})
 	return <div style={{...panelBox(weather),flexDirection:'column',alignItems:'center',justifyContent:'center',padding:compact?'8px 8px 6px':14}}>
 		<div style={{...text(compact?8:11,800),letterSpacing:compact?1:2}}>{`${weather.labels.wind} / ${weather.windDirection}`}</div>
 		<div style={{display:'flex',alignItems:'baseline',marginTop:compact?2:5}}><div style={{...text(compact?39:62,900),lineHeight:1}}>{weather.windSpeed}</div><div style={{...text(compact?10:15,900),marginLeft:4}}>{weather.windUnit}</div></div>
-		<div style={{...text(compact?21:36,900),color:weather.display.accent}}>↑</div><div style={text(compact?8:11)}>{`${weather.labels.gusts} ${weather.windGust} ${weather.windUnit}`}</div>
+		<div style={{...text(compact?21:36,900),color:paint(weather).accent}}>↑</div><div style={text(compact?8:11)}>{`${weather.labels.gusts} ${weather.windGust} ${weather.windUnit}`}</div>
 	</div>
 }
 
 function SunCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',justifyContent:'space-between',padding:compact?'8px 12px 8px':'18px'}}>
-		<Metric compact={compact} label={weather.labels.sunrise} value={weather.sunrise}/><div style={{display:'flex',height:compact?2:3,background:weather.display.fill}}/>
-		<Metric compact={compact} label={weather.labels.sunset} value={weather.sunset}/><div style={{display:'flex',height:compact?2:3,background:weather.display.fill}}/>
+		<Metric compact={compact} label={weather.labels.sunrise} value={weather.sunrise}/><div style={{display:'flex',height:compact?2:3,background:paint(weather).fill}}/>
+		<Metric compact={compact} label={weather.labels.sunset} value={weather.sunset}/><div style={{display:'flex',height:compact?2:3,background:paint(weather).fill}}/>
 		<Metric compact={compact} label={weather.labels.uv} value={String(weather.uvIndex)}/>
 	</div>
 }
@@ -126,7 +143,7 @@ function SunCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) 
 function CloudsCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}) {
 	return <div style={{...panelBox(weather),flexDirection:'column',alignItems:'center',justifyContent:'center',padding:compact?'8px 9px 7px':16}}>
 		<div style={{...text(compact?8:11,800),letterSpacing:compact?1:1.6}}>{weather.labels.clouds}</div><div style={{...text(compact?43:76,900),lineHeight:1,marginTop:compact?4:10}}>{weather.cloudCover}</div><div style={text(compact?15:24,900)}>%</div>
-		<div style={{display:'flex',width:compact?58:90,height:compact?8:12,marginTop:compact?5:14,border:'2px solid currentColor'}}><div style={{display:'flex',width:`${weather.cloudCover}%`,background:weather.display.fill}}/></div><div style={{...text(compact?8:11,800),marginTop:compact?4:10}}>{weather.weatherLabel}</div>
+		<div style={{display:'flex',width:compact?58:90,height:compact?8:12,marginTop:compact?5:14,border:'2px solid currentColor',borderRadius:paint(weather).inner,overflow:'hidden'}}><div style={{display:'flex',width:`${weather.cloudCover}%`,background:paint(weather).fill}}/></div><div style={{...text(compact?8:11,800),marginTop:compact?4:10}}>{weather.weatherLabel}</div>
 	</div>
 }
 
@@ -138,11 +155,18 @@ function shortTick(label:string){
 	return label
 }
 
-function SparkChart({values,secondary,labels,unit='',bars=false,stroke,mark}:{values:number[];secondary?:number[];labels:string[];unit?:string;bars?:boolean;stroke:string;mark:string}){
+function roundedTopBar(x:number,y:number,width:number,height:number,radius:number){
+	const r=Math.max(0,Math.min(radius,width/2,height))
+	if(r<=0)return `M${x} ${y+height}H${x+width}V${y}H${x}Z`
+	return `M${x} ${y+height}V${y+r}Q${x} ${y} ${x+r} ${y}H${x+width-r}Q${x+width} ${y} ${x+width} ${y+r}V${y+height}Z`
+}
+
+function SparkChart({values,secondary,labels,unit='',bars=false,stroke,mark,radius=0}:{values:number[];secondary?:number[];labels:string[];unit?:string;bars?:boolean;stroke:string;mark:string;radius?:number}){
 	const all=[...values,...(secondary??[])];if(!all.length)return <div/>
 	const min=Math.min(...all);const max=Math.max(...all);const range=Math.max(1,max-min)
 	const ticks=labels.length<=5?labels:[labels[0],labels[Math.floor((labels.length-1)/3)],labels[Math.floor((labels.length-1)*2/3)],labels[labels.length-1]]
 	const points=(series:number[])=>series.map((value,index)=>`${8+index*(184/Math.max(1,series.length-1))},${78-(value-min)/range*60}`).join(' ')
+	const cap=radius>0?'round':'square'
 	return <div style={{display:'flex',flex:1,minHeight:0,flexDirection:'column',overflow:'hidden'}}>
 		<div style={{display:'flex',justifyContent:'space-between',gap:6,fontSize:fs(9),fontWeight:900,overflow:'hidden'}}>
 			<span style={{flexShrink:0}}>{Math.round(max)}{unit}</span>
@@ -150,8 +174,8 @@ function SparkChart({values,secondary,labels,unit='',bars=false,stroke,mark}:{va
 		</div>
 		<svg viewBox="0 0 200 78" preserveAspectRatio="none" style={{display:'flex',width:'100%',flex:1,minHeight:36,overflow:'hidden'}} aria-hidden="true">
 			<line x1="8" y1="78" x2="192" y2="78" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke"/><line x1="8" y1="48" x2="192" y2="48" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke"/>
-			{bars?values.map((value,index)=>{const height=Math.max(2,(value-min)/range*60);const width=166/values.length;return <rect key={index} x={12+index*(176/values.length)} y={78-height} width={width} height={height} fill={stroke}/>}):<polyline points={points(values)} fill="none" stroke={stroke} strokeWidth="5" strokeLinejoin="round" strokeLinecap="square" vectorEffect="non-scaling-stroke"/>}
-			{secondary&&<polyline points={points(secondary)} fill="none" stroke={mark} strokeWidth="2" strokeDasharray="6 5" vectorEffect="non-scaling-stroke"/>}
+			{bars?values.map((value,index)=>{const height=Math.max(2,(value-min)/range*60);const width=166/values.length;const x=12+index*(176/values.length);const y=78-height;return <path key={index} d={roundedTopBar(x,y,width,height,Math.min(radius,width/2))} fill={stroke}/>}):<polyline points={points(values)} fill="none" stroke={stroke} strokeWidth="5" strokeLinejoin="round" strokeLinecap={cap} vectorEffect="non-scaling-stroke"/>}
+			{secondary&&<polyline points={points(secondary)} fill="none" stroke={mark} strokeWidth="2" strokeDasharray="6 5" strokeLinecap={cap} vectorEffect="non-scaling-stroke"/>}
 		</svg>
 		<div style={{display:'flex',gap:2,overflow:'hidden'}}>{ticks.map((label,index)=><span key={`${label}-${index}`} style={{flex:1,minWidth:0,overflow:'hidden',fontSize:fs(8),fontWeight:900,textAlign:index===0?'left':index===ticks.length-1?'right':'center'}}>{shortTick(label)}</span>)}</div>
 	</div>
@@ -160,16 +184,26 @@ function SparkChart({values,secondary,labels,unit='',bars=false,stroke,mark}:{va
 function ClockCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){
 	const hour=Number(weather.observedAt.slice(11,13));const minute=Number(weather.observedAt.slice(14,16));const minuteAngle=minute*6;const hourAngle=(hour%12)*30+minute/2
 	return <div style={{...panelBox(weather),alignItems:'center',justifyContent:'center',gap:compact?6:18,padding:compact?'8px 8px 6px':'18px'}}><svg viewBox="0 0 120 120" style={{height:compact?'58%':150,maxHeight:compact?96:150,maxWidth:'48%',minHeight:0}} aria-label={`${hour}:${String(minute).padStart(2,'0')}`}>
-		<circle cx="60" cy="60" r="54" fill={weather.display.paper} stroke="currentColor" strokeWidth="5"/>{Array.from({length:12},(_,index)=><line key={index} x1="60" y1="10" x2="60" y2={index%3===0?'20':'16'} stroke="currentColor" strokeWidth={index%3===0?'4':'2'} transform={`rotate(${index*30} 60 60)`}/>)}
-		<line x1="60" y1="60" x2="60" y2="31" stroke={weather.display.accent} strokeWidth="6" transform={`rotate(${hourAngle} 60 60)`}/><line x1="60" y1="64" x2="60" y2="20" stroke="currentColor" strokeWidth="3" transform={`rotate(${minuteAngle} 60 60)`}/><circle cx="60" cy="60" r="5" fill={weather.display.accent}/>
+		<circle cx="60" cy="60" r="54" fill={paint(weather).paper} stroke="currentColor" strokeWidth="5"/>{Array.from({length:12},(_,index)=><line key={index} x1="60" y1="10" x2="60" y2={index%3===0?'20':'16'} stroke="currentColor" strokeWidth={index%3===0?'4':'2'} transform={`rotate(${index*30} 60 60)`}/>)}
+		<line x1="60" y1="60" x2="60" y2="31" stroke={paint(weather).accent} strokeWidth="6" transform={`rotate(${hourAngle} 60 60)`}/><line x1="60" y1="64" x2="60" y2="20" stroke="currentColor" strokeWidth="3" transform={`rotate(${minuteAngle} 60 60)`}/><circle cx="60" cy="60" r="5" fill={paint(weather).accent}/>
 	</svg><div style={{display:'flex',flexDirection:'column'}}><CardTitle compact={compact}>{weather.labels.wind==='ВЕТЕР'?'МЕСТНОЕ ВРЕМЯ':'LOCAL TIME'}</CardTitle><div style={{...text(compact?30:44,900),letterSpacing:-2}}>{weather.observedAt.slice(11,16)}</div><div style={{...text(compact?8:10),marginTop:5}}>{weather.timezone.replace('_',' ')}</div></div></div>
 }
 
-function PhotoCard({weather}:{weather:WeatherScreenData}){const photo=weather.layout.photoDataUrl;return <div style={{...panelBox(weather),position:'relative',overflow:'hidden',alignItems:'center',justifyContent:'center'}}>{photo?<img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:<div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:16,textAlign:'center'}}><b style={{fontSize:fs(32)}}>▧</b><span style={{fontSize:fs(11),fontWeight:900}}>ЗАГРУЗИТЕ ФОТО В НАСТРОЙКАХ</span></div>}</div>}
+function PhotoCard({weather}:{weather:WeatherScreenData}){
+	const photo=weather.layout.photoDataUrl
+	return <div style={{...panelBox(weather),position:'relative',overflow:'hidden',alignItems:'center',justifyContent:'center'}}>
+		{photo
+			?<img src={photo} alt="" style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',objectFit:'cover',objectPosition:'center'}}/>
+			:<div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:16,textAlign:'center'}}>
+				<b style={{fontSize:fs(32)}}>▧</b>
+				<span style={{fontSize:fs(11),fontWeight:900}}>ЗАГРУЗИТЕ ФОТО СПРАВА</span>
+			</div>}
+	</div>
+}
 
 function WeatherSceneCard({weather,compact,span}:{weather:WeatherScreenData;compact:boolean;span:number}){
 	const wet=weather.precipitation>0||weather.precipitationProbability>=45;const snowy=weather.snowfall>0;const cloudy=weather.cloudCover>=45
-	const t=weather.display
+	const t=paint(weather)
 	return <div style={{...panelBox(weather),position:'relative',overflow:'hidden',flexDirection:'column',padding:compact?'8px 10px 8px':'14px'}}><div style={{display:'flex',justifyContent:'space-between'}}><CardTitle compact={compact}>{weather.labels.wind==='ВЕТЕР'?'ПОГОДНАЯ СЦЕНА':'WEATHER SCENE'}</CardTitle><div style={text(compact?8:10,900)}>{weather.isDay?'DAY':'NIGHT'}</div></div>
 		<svg viewBox="0 0 320 150" preserveAspectRatio="xMidYMid meet" style={{position:'absolute',top:0,bottom:0,left:span>=3?'25%':0,width:span>=3?'50%':'100%',height:'100%'}} aria-hidden="true"><defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke={t.ink} strokeWidth="2" vectorEffect="non-scaling-stroke"/></pattern></defs>
 		<rect x="0" y="0" width="320" height="124" fill={t.sky}/>
@@ -177,10 +211,10 @@ function WeatherSceneCard({weather,compact,span}:{weather:WeatherScreenData;comp
 		{cloudy&&<g fill={t.paper} stroke={t.ink} strokeWidth="5"><circle cx="136" cy="68" r="25"/><circle cx="169" cy="58" r="34"/><circle cx="207" cy="72" r="27"/><path d="M110 76 H230 V91 H110 Z"/></g>}
 		{wet&&Array.from({length:7},(_,index)=><line key={index} x1={116+index*18} y1="98" x2={snowy?116+index*18:108+index*18} y2={snowy?108:121} stroke={t.fill} strokeWidth={snowy?6:4} strokeLinecap="square"/>)}
 		<path d="M0 124 L50 98 L86 118 L142 88 L205 122 L254 101 L320 128 V150 H0 Z" fill={t.ground}/><path d="M0 135 L64 117 L112 138 L181 112 L235 136 L289 118 L320 128 V150 H0 Z" fill={t.paper} stroke={t.ink} strokeWidth="4"/>
-		</svg><div style={{marginTop:'auto',alignSelf:'flex-start',padding:'3px 6px',background:t.paper,border:`2px solid ${t.ink}`,...text(compact?8:11,900)}}>{weather.weatherLabel}</div></div>
+		</svg><div style={{marginTop:'auto',alignSelf:'flex-start',padding:'3px 6px',background:t.paper,border:`2px solid ${t.ink}`,borderRadius:t.inner,...text(compact?8:11,900)}}>{weather.weatherLabel}</div></div>
 }
 
-function chartColors(weather:WeatherScreenData){return {stroke:weather.display.fill,mark:weather.display.accent}}
+function chartColors(weather:WeatherScreenData){const t=paint(weather);return {stroke:t.fill,mark:t.accent,radius:Math.max(t.inner,t.radius?Math.round(t.radius*.55):0)}}
 function chartSeries(weather:WeatherScreenData,id:BlockId){
 	const days=getCardRangeDays(weather.layout,id)
 	if(days<=3){
@@ -259,7 +293,7 @@ function WeekStripCard({weather,compact,span}:{weather:WeatherScreenData;compact
 	const days=weekDays(weather,'weekStrip');const list=isWeekList(span,compact)
 	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'6px 6px 4px':(list?'12px 12px 8px':'8px 8px 6px')}}>
 		<div style={weekBody(list)}>
-			{days.map(day=><WeekDayColumn key={day.date} day={day} compact={compact} span={span} list={list} count={days.length} iconSize={weekIconSize(span,compact,list)} ink={weather.display.ink} accent={weather.display.accent}/>)}
+			{days.map(day=><WeekDayColumn key={day.date} day={day} compact={compact} span={span} list={list} count={days.length} iconSize={weekIconSize(span,compact,list)} ink={paint(weather).ink} accent={paint(weather).accent}/>)}
 		</div>
 	</div>
 }
@@ -271,7 +305,7 @@ function WeekTilesCard({weather,compact,span}:{weather:WeatherScreenData;compact
 			{days.map(day=><div key={day.date} style={{...weekItemBox(span,list,days.length),boxSizing:'border-box',padding:compact?1:3}}>
 				<div style={{display:'flex',flex:1,minHeight:0,overflow:'hidden',border:'2px solid currentColor',padding:compact?2:4,...(list?{alignItems:'center'}:{flexDirection:'column',alignItems:'center',justifyContent:'space-between'})}}>
 					<div style={{fontSize:fs(compact?8:11),fontWeight:700}}>{days.length>7?`${weekDayLabel(day.day)} ${day.dayNum}`:weekDayLabel(day.day)}</div>
-					{list?<WeatherIcon code={day.weatherCode??3} size={weekIconSize(span,compact,list)} color={weather.display.ink} accent={weather.display.accent}/>:<WeekIconSlot code={day.weatherCode??3} size={weekIconSize(span,compact,list)} ink={weather.display.ink} accent={weather.display.accent}/>}
+					{list?<WeatherIcon code={day.weatherCode??3} size={weekIconSize(span,compact,list)} color={paint(weather).ink} accent={paint(weather).accent}/>:<WeekIconSlot code={day.weatherCode??3} size={weekIconSize(span,compact,list)} ink={paint(weather).ink} accent={paint(weather).accent}/>}
 					<div style={{fontSize:fs(compact?8:11),fontWeight:600}}>{`${day.high}°|${day.low}°`}</div>
 				</div>
 			</div>)}
@@ -289,8 +323,8 @@ function WeekRangeCard({weather,compact,span}:{weather:WeatherScreenData;compact
 				const top=((max-day.high)/range)*100;const bar=((day.high-day.low)/range)*100
 				return <div key={day.date} style={{...weekItemBox(span,list,days.length),boxSizing:'border-box',padding:compact?1:3,flexDirection:list?'row':'column',alignItems:'center',justifyContent:'space-between'}}>
 					<div style={{fontSize:fs(compact?8:11),fontWeight:700,flexShrink:0}}>{days.length>7?day.dayNum:weekDayLabel(day.day)}</div>
-					{list?<WeatherIcon code={day.weatherCode??3} size={weekIconSize(span,compact,true)} color={weather.display.ink} accent={weather.display.accent}/>:<WeekIconSlot code={day.weatherCode??3} size={Math.round(weekIconSize(span,compact,false)*.72)} ink={weather.display.ink} accent={weather.display.accent}/>}
-					{list?<div style={{display:'flex',flex:1,height:compact?6:10,minWidth:12,marginLeft:4,marginRight:4,border:'2px solid currentColor'}}><div style={{marginLeft:`${top}%`,width:`${Math.max(8,bar)}%`,height:'100%',background:weather.display.fill}}/></div>:<div style={{display:'flex',width:compact?8:12,flex:1,minHeight:0,border:'2px solid currentColor'}}><div style={{marginTop:`${top}%`,width:'100%',height:`${Math.max(10,bar)}%`,background:weather.display.fill}}/></div>}
+					{list?<WeatherIcon code={day.weatherCode??3} size={weekIconSize(span,compact,true)} color={paint(weather).ink} accent={paint(weather).accent}/>:<WeekIconSlot code={day.weatherCode??3} size={Math.round(weekIconSize(span,compact,false)*.72)} ink={paint(weather).ink} accent={paint(weather).accent}/>}
+					{list?<div style={{display:'flex',flex:1,height:compact?6:10,minWidth:12,marginLeft:4,marginRight:4,border:'2px solid currentColor',borderRadius:paint(weather).inner,overflow:'hidden'}}><div style={{marginLeft:`${top}%`,width:`${Math.max(8,bar)}%`,height:'100%',background:paint(weather).fill}}/></div>:<div style={{display:'flex',width:compact?8:12,flex:1,minHeight:0,border:'2px solid currentColor',borderRadius:paint(weather).inner,overflow:'hidden'}}><div style={{marginTop:`${top}%`,width:'100%',height:`${Math.max(10,bar)}%`,background:paint(weather).fill}}/></div>}
 					<div style={{fontSize:fs(compact?8:11),fontWeight:600,flexShrink:0}}>{`${day.high}°|${day.low}°`}</div>
 				</div>
 			})}
@@ -303,7 +337,7 @@ function SimpleValueCard({weather,label,value,detail,compact}:{weather:WeatherSc
 		<CardTitle compact={compact}>{label}</CardTitle>
 		<div style={{display:'flex',flex:1,minHeight:0,flexDirection:'column',justifyContent:'center'}}>
 			<div style={{...text(compact?42:62,900),lineHeight:.9,letterSpacing:-2}}>{value}</div>
-			<div style={{display:'flex',height:3,background:weather.display.fill,margin:'10px 0 8px'}}/>
+			<div style={{display:'flex',height:3,background:paint(weather).fill,margin:'10px 0 8px'}}/>
 			<div style={{...text(compact?12:14,800),lineHeight:1.15}}>{detail}</div>
 		</div>
 	</div>
@@ -328,7 +362,7 @@ function OverviewCard({weather,compact}:{weather:WeatherScreenData;compact:boole
 		</div>
 	</div>
 }
-function PrecipitationDetailCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const values=[[weather.labels.wind==='ВЕТЕР'?'ВСЕГО':'TOTAL',weather.precipitationSum],[weather.labels.wind==='ВЕТЕР'?'ДОЖДЬ':'RAIN',weather.rainSum],[weather.labels.wind==='ВЕТЕР'?'ЛИВНИ':'SHOWERS',weather.showersSum],[weather.labels.wind==='ВЕТЕР'?'СНЕГ':'SNOW',weather.snowfallSum]];return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 11px 8px':'16px'}}><CardTitle compact={compact}>{weather.labels.precipitation} · {weather.labels.wind==='ВЕТЕР'?'ЗА ДЕНЬ':'TODAY'}</CardTitle><div style={{display:'flex',flexWrap:'wrap',flex:1,marginTop:5,border:'2px solid currentColor'}}>{values.map(([label,value],index)=><div key={String(label)} style={{display:'flex',width:'50%',boxSizing:'border-box',flexDirection:'column',justifyContent:'center',padding:'4px 8px',borderLeft:index%2?'2px solid currentColor':'none',borderTop:index>1?'2px solid currentColor':'none'}}><span style={{fontSize:fs(compact?7:9),fontWeight:800}}>{label}</span><b style={{fontSize:fs(compact?18:25)}}>{value} {weather.precipitationUnit}</b></div>)}</div><div style={{...text(compact?7:9),marginTop:4}}>{weather.precipitationHours} h · {weather.labels.wind==='ВЕТЕР'?'СЕЙЧАС':'NOW'} {weather.precipitation} / {weather.rain} / {weather.showers} / {weather.snowfall}</div></div>}
+function PrecipitationDetailCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const values=[[weather.labels.wind==='ВЕТЕР'?'ВСЕГО':'TOTAL',weather.precipitationSum],[weather.labels.wind==='ВЕТЕР'?'ДОЖДЬ':'RAIN',weather.rainSum],[weather.labels.wind==='ВЕТЕР'?'ЛИВНИ':'SHOWERS',weather.showersSum],[weather.labels.wind==='ВЕТЕР'?'СНЕГ':'SNOW',weather.snowfallSum]];return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 11px 8px':'16px'}}><CardTitle compact={compact}>{weather.labels.precipitation} · {weather.labels.wind==='ВЕТЕР'?'ЗА ДЕНЬ':'TODAY'}</CardTitle><div style={{display:'flex',flexWrap:'wrap',flex:1,marginTop:5,border:'2px solid currentColor',borderRadius:paint(weather).inner,overflow:'hidden'}}>{values.map(([label,value],index)=><div key={String(label)} style={{display:'flex',width:'50%',boxSizing:'border-box',flexDirection:'column',justifyContent:'center',padding:'4px 8px',borderLeft:index%2?'2px solid currentColor':'none',borderTop:index>1?'2px solid currentColor':'none'}}><span style={{fontSize:fs(compact?7:9),fontWeight:800}}>{label}</span><b style={{fontSize:fs(compact?18:25)}}>{value} {weather.precipitationUnit}</b></div>)}</div><div style={{...text(compact?7:9),marginTop:4}}>{weather.precipitationHours} h · {weather.labels.wind==='ВЕТЕР'?'СЕЙЧАС':'NOW'} {weather.precipitation} / {weather.rain} / {weather.showers} / {weather.snowfall}</div></div>}
 function DaylightCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){
 	return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 11px 8px':'17px'}}>
 		<CardTitle compact={compact}>{weather.labels.daylight}</CardTitle>
@@ -339,7 +373,7 @@ function DaylightCard({weather,compact}:{weather:WeatherScreenData;compact:boole
 		</div>
 	</div>
 }
-function CloudLayersCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const layers=[[weather.labels.wind==='ВЕТЕР'?'ВЫСОКО':'HIGH',weather.cloudCoverHigh],[weather.labels.wind==='ВЕТЕР'?'СРЕДНЕ':'MID',weather.cloudCoverMid],[weather.labels.wind==='ВЕТЕР'?'НИЗКО':'LOW',weather.cloudCoverLow]];return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 11px 8px':'16px'}}><CardTitle compact={compact}>{weather.labels.clouds} · {weather.labels.wind==='ВЕТЕР'?'СЛОИ':'LAYERS'}</CardTitle><div style={{display:'flex',flexDirection:'column',justifyContent:'space-around',flex:1}}>{layers.map(([label,value])=><div key={String(label)} style={{display:'flex',alignItems:'center',gap:6,fontSize:fs(compact?8:10),fontWeight:900}}><span style={{width:48}}>{label}</span><div style={{display:'flex',flex:1,height:compact?11:16,border:'2px solid currentColor'}}><div style={{display:'flex',width:`${value}%`,height:'100%',background:weather.display.fill}}/></div><b style={{width:34}}>{value}%</b></div>)}</div></div>}
+function CloudLayersCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const layers=[[weather.labels.wind==='ВЕТЕР'?'ВЫСОКО':'HIGH',weather.cloudCoverHigh],[weather.labels.wind==='ВЕТЕР'?'СРЕДНЕ':'MID',weather.cloudCoverMid],[weather.labels.wind==='ВЕТЕР'?'НИЗКО':'LOW',weather.cloudCoverLow]];return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 11px 8px':'16px'}}><CardTitle compact={compact}>{weather.labels.clouds} · {weather.labels.wind==='ВЕТЕР'?'СЛОИ':'LAYERS'}</CardTitle><div style={{display:'flex',flexDirection:'column',justifyContent:'space-around',flex:1}}>{layers.map(([label,value])=><div key={String(label)} style={{display:'flex',alignItems:'center',gap:6,fontSize:fs(compact?8:10),fontWeight:900}}><span style={{width:48}}>{label}</span><div style={{display:'flex',flex:1,height:compact?11:16,border:'2px solid currentColor',borderRadius:paint(weather).inner,overflow:'hidden'}}><div style={{display:'flex',width:`${value}%`,height:'100%',background:paint(weather).fill}}/></div><b style={{width:34}}>{value}%</b></div>)}</div></div>}
 function RadiationCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 10px 6px':'17px'}}><CardTitle compact={compact}>{weather.labels.radiation}</CardTitle><div style={{display:'flex',alignItems:'center',gap:12,flex:1,minHeight:0,overflow:'hidden'}}><div style={{display:'flex',alignItems:'center',justifyContent:'center',width:compact?48:88,height:compact?48:88,flexShrink:0,border:'5px solid currentColor',borderRadius:'50%',fontSize:fs(compact?18:34),fontWeight:900}}>☀</div><div style={{display:'flex',flexDirection:'column'}}><b style={{fontSize:fs(compact?22:42)}}>{weather.shortwaveRadiationSum}</b><div style={{fontSize:fs(compact?8:11),fontWeight:900}}>MJ / m²</div><div style={{fontSize:fs(compact?8:11),fontWeight:800,marginTop:5}}>{`ET₀ ${weather.evapotranspiration} ${weather.precipitationUnit}`}</div></div></div></div>}
 function AirQualityCard({weather,compact}:{weather:WeatherScreenData;compact:boolean}){const aq=weather.airQuality;if(!aq)return <SimpleValueCard weather={weather} compact={compact} label={weather.labels.airQuality} value="—" detail={weather.labels.wind==='ВЕТЕР'?'ДАННЫЕ НЕДОСТУПНЫ':'NO DATA'}/>;return <div style={{...panelBox(weather),flexDirection:'column',padding:compact?'8px 11px 8px':'16px'}}><CardTitle compact={compact}>{weather.labels.airQuality}</CardTitle><div style={{display:'flex',alignItems:'baseline',gap:7}}><b style={{fontSize:fs(compact?40:58),lineHeight:1}}>{aq.europeanAqi}</b><span style={{fontSize:fs(compact?8:11),fontWeight:900}}>EU AQI · US {aq.usAqi}</span></div><div style={{display:'flex',gap:3,marginTop:'auto'}}>{[['PM₂.₅',aq.pm25],['PM₁₀',aq.pm10],['NO₂',aq.nitrogenDioxide],['O₃',aq.ozone],['CO',aq.carbonMonoxide],['SO₂',aq.sulphurDioxide]].map(([label,value])=><div key={String(label)} style={{display:'flex',flex:1,flexDirection:'column',borderTop:'2px solid currentColor',paddingTop:3}}><span style={{fontSize:fs(compact?8:8),fontWeight:800}}>{label}</span><b style={{fontSize:fs(compact?11:16)}}>{value}</b></div>)}</div></div>}
 
@@ -387,16 +421,17 @@ export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,
 	const empty=addSlot?findEmptySlot(weather.layout):null
 	const rowCount=Math.max(1,...packed.map(item=>item.row+item.rowSpan-1),empty?empty.row+empty.rowSpan-1:1)
 	const hasSecondRow=rowCount>1
-	const theme=weather.display
+	const size=weather.display
+	const chrome=paint(weather)
 	const header=getHeader(weather.layout)
-	const screenW=theme.width
-	const screenH=theme.height
+	const screenW=size.width
+	const screenH=size.height
 	const sizeMul=header.size==='s'?0.72:header.size==='l'?1.22:1
 	const headerH=header.visible?Math.max(36,Math.round(64*sizeMul*Math.min(screenW/DESIGN_WIDTH,screenH/DESIGN_HEIGHT,1.15))):0
 	const innerW=screenW-16
 	const bodyH=screenH-16-headerH
 	const pad=Math.max(8,Math.round(14*Math.min(screenW/DESIGN_WIDTH,1)))
-	const gap=Math.max(6,Math.round(10*Math.min(screenW/DESIGN_WIDTH,1)))
+	const gap=getCardGap(weather.layout)
 	const cellW=(innerW-pad*2-gap*3)/4
 	const cellH=(bodyH-pad*2-gap*Math.max(0,rowCount-1))/rowCount
 	const cellStyle=(col:number,row:number,colSpan:CardSpan,rowSpan:CardRowSpan)=>({
@@ -411,20 +446,25 @@ export function WeatherScreen({weather,generatedAt,generatedAtLocal,renderBlock,
 		overflow:'visible' as const,
 	})
 	const filled=header.style==='fill'
-	const headerBg=filled?theme.headerBg:theme.paper
-	const headerFg=filled?theme.headerFg:theme.ink
+	const headerBg=filled?chrome.headerBg:chrome.paper
+	const headerFg=filled?chrome.headerFg:chrome.ink
 	const title=(header.title??weather.city).toUpperCase()
 	const showLeft=header.showCity||header.showCoords
 	const showRight=header.showDate||header.showTime
-	const headerBar=header.visible?<div style={{height:headerH,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px',background:headerBg,color:headerFg,boxSizing:'border-box',...(header.style==='line'?{borderBottom:`3px solid ${theme.ink}`}:{})}}>
+	const radius=chrome.radius
+	const frame=8
+	const innerRadius=Math.max(0,radius-frame)
+	const headerBar=header.visible?<div style={{height:headerH,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 16px',background:headerBg,color:headerFg,boxSizing:'border-box',overflow:'hidden',borderTopLeftRadius:innerRadius,borderTopRightRadius:innerRadius,...(header.style==='line'?{borderBottom:`3px solid ${chrome.ink}`}:{})}}>
 			{showLeft?<div style={{display:'flex',alignItems:'baseline',gap:10,minWidth:0}}>{header.showCity?<div style={{...text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:25)*Math.min(screenW/DESIGN_WIDTH,1))),900),letterSpacing:.7}}>{title}</div>:null}{header.showCoords?<div style={{...text(Math.max(8,Math.round(10*Math.min(screenW/DESIGN_WIDTH,1)))),letterSpacing:1.5}}>{weather.coordinates}</div>:null}</div>:<div/>}
 			{showRight?<div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>{header.showDate?<div style={{...text(Math.max(9,Math.round(12*Math.min(screenW/DESIGN_WIDTH,1))),800),letterSpacing:1}}>{date}</div>:null}{header.showTime?<div style={text(Math.max(14,Math.round((header.size==='s'?20:header.size==='l'?28:24)*Math.min(screenW/DESIGN_WIDTH,1))),900)}>{time}</div>:null}</div>:null}
 		</div>:null
-	return <div style={{width:screenW,height:screenH,display:'flex',flexDirection:'column',background:theme.paper,color:theme.ink,fontFamily:renderBlock?undefined:SCREEN_FONT_FAMILY,fontSize:fs(16),border:`8px solid ${theme.headerBg}`,boxSizing:'border-box'}}>
-		{renderHeader?renderHeader(headerBar):headerBar}
-		<div style={{display:'flex',flex:1,minHeight:0,position:'relative'}}>
-			{packed.map(item=>{const compact=hasSecondRow&&item.rowSpan===1;const content=renderPanelCard(item.id,weather,compact,item.colSpan);return <div key={item.id} className="screen-cell" style={cellStyle(item.col,item.row,item.colSpan,item.rowSpan)}>{renderBlock?renderBlock(item.id,content):content}</div>})}
-			{empty&&addSlot?<div style={cellStyle(empty.col,empty.row,empty.colSpan,empty.rowSpan)}>{addSlot}</div>:null}
+	return <div style={{width:screenW,height:screenH,display:'flex',background:chrome.frame,color:chrome.ink,fontFamily:renderBlock?undefined:SCREEN_FONT_FAMILY,fontSize:fs(16),borderRadius:radius,overflow:'hidden',boxSizing:'border-box',padding:frame}}>
+		<div style={{display:'flex',flexDirection:'column',flex:1,minWidth:0,minHeight:0,background:chrome.paper,color:chrome.ink,borderRadius:innerRadius,overflow:'hidden'}}>
+			{renderHeader?renderHeader(headerBar):headerBar}
+			<div style={{display:'flex',flex:1,minHeight:0,position:'relative'}}>
+				{packed.map(item=>{const compact=hasSecondRow&&item.rowSpan===1;const content=renderPanelCard(item.id,weather,compact,item.colSpan);return <div key={item.id} className="screen-cell" style={cellStyle(item.col,item.row,item.colSpan,item.rowSpan)}>{renderBlock?renderBlock(item.id,content):content}</div>})}
+				{empty&&addSlot?<div style={cellStyle(empty.col,empty.row,empty.colSpan,empty.rowSpan)}>{addSlot}</div>:null}
+			</div>
 		</div>
 	</div>
 }
