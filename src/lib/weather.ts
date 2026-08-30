@@ -111,21 +111,64 @@ const windDirection = (degrees: number, language: LanguageCode) => {
 	return values[Math.round(degrees / 45) % values.length]
 }
 
+const METEO_TTL_MS = 30_000
+type MeteoBundle = {data: OpenMeteoResponse; air: AirQualityResponse | null}
+const meteoCache = new Map<string, {until: number; bundle: MeteoBundle}>()
+const meteoInflight = new Map<string, Promise<MeteoBundle>>()
+
+function meteoKey(settings: WeatherSettings) {
+	return `${settings.latitude}|${settings.longitude}|${settings.timezone}`
+}
+
+async function fetchOk(url: string) {
+	let last: unknown
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const response = await fetch(url, {cache: 'no-store', signal: AbortSignal.timeout(15_000)})
+			if (response.ok || (response.status < 500 && response.status !== 429)) return response
+			last = new Error(`HTTP ${response.status}`)
+		} catch (error) {
+			last = error
+		}
+		await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)))
+	}
+	throw last instanceof Error ? last : new Error('Weather fetch failed')
+}
+
+async function loadMeteo(settings: WeatherSettings): Promise<MeteoBundle> {
+	const key = meteoKey(settings)
+	const hit = meteoCache.get(key)
+	if (hit && hit.until > Date.now()) return hit.bundle
+	const pending = meteoInflight.get(key)
+	if (pending) return pending
+	const task = (async () => {
+		const params = new URLSearchParams({
+			latitude:String(settings.latitude), longitude:String(settings.longitude),
+			current:'temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation,rain,showers,snowfall,weather_code,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,pressure_msl,surface_pressure,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day',
+			hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m',
+			daily:'weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,rain_sum,showers_sum,snowfall_sum,precipitation_hours,precipitation_probability_max,sunrise,sunset,daylight_duration,sunshine_duration,uv_index_max,uv_index_clear_sky_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,shortwave_radiation_sum,et0_fao_evapotranspiration',
+			timezone:settings.timezone, forecast_days:'7', forecast_hours:'24', wind_speed_unit:'ms',
+		})
+		const airParams=new URLSearchParams({latitude:String(settings.latitude),longitude:String(settings.longitude),current:'european_aqi,us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',timezone:settings.timezone})
+		const [response,air] = await Promise.all([
+			fetchOk(`https://api.open-meteo.com/v1/forecast?${params}`),
+			fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams}`,{cache:'no-store',signal:AbortSignal.timeout(15_000)}).then(async response=>response.ok?(await response.json()) as AirQualityResponse:null).catch(()=>null),
+		])
+		if (!response.ok) throw new Error(`Open-Meteo returned HTTP ${response.status}`)
+		const bundle = {data: (await response.json()) as OpenMeteoResponse, air}
+		meteoCache.set(key, {until: Date.now() + METEO_TTL_MS, bundle})
+		return bundle
+	})()
+	meteoInflight.set(key, task)
+	try {
+		return await task
+	} finally {
+		meteoInflight.delete(key)
+	}
+}
+
 export async function getWeatherScreenData(settings: WeatherSettings = DEFAULT_WEATHER_SETTINGS): Promise<WeatherScreenData> {
-	const params = new URLSearchParams({
-		latitude:String(settings.latitude), longitude:String(settings.longitude),
-		current:'temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation,rain,showers,snowfall,weather_code,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,pressure_msl,surface_pressure,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day',
-		hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m',
-		daily:'weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,rain_sum,showers_sum,snowfall_sum,precipitation_hours,precipitation_probability_max,sunrise,sunset,daylight_duration,sunshine_duration,uv_index_max,uv_index_clear_sky_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,shortwave_radiation_sum,et0_fao_evapotranspiration',
-		timezone:settings.timezone, forecast_days:'7', forecast_hours:'24', wind_speed_unit:'ms',
-	})
-	const airParams=new URLSearchParams({latitude:String(settings.latitude),longitude:String(settings.longitude),current:'european_aqi,us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',timezone:settings.timezone})
-	const [response,airData] = await Promise.all([
-		fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {cache:'no-store', signal:AbortSignal.timeout(15_000)}),
-		fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${airParams}`,{cache:'no-store',signal:AbortSignal.timeout(15_000)}).then(async response=>response.ok?(await response.json()) as AirQualityResponse:null).catch(()=>null),
-	])
-	if (!response.ok) throw new Error(`Open-Meteo returned HTTP ${response.status}`)
-	const data = (await response.json()) as OpenMeteoResponse
+	const {data, air: airData} = await loadMeteo(settings)
 	const foundIndex = data.hourly.time.findIndex(time => time >= data.current.time)
 	const currentIndex = foundIndex < 0 ? 0 : foundIndex
 	const forecast = [0,3,6,9].map(offset => {

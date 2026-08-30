@@ -40,6 +40,7 @@ export async function GET(request:Request,{params}:{params:Promise<{slug:string}
 		return weatherImageResponse(await renderWeatherDataImage(weather),responseHeaders)
 	} catch(error) {
 		console.error('Personal weather image failed:',error)
-		return Response.json({error:'Failed to generate weather screen'},{status:500})
+		const detail=error instanceof Error?error.message:String(error)
+		return Response.json({error:'Failed to generate weather screen',detail},{status:500})
 	}
 }
