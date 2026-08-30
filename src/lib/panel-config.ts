@@ -32,7 +32,7 @@ export type HeaderConfig = {
 }
 export const DEFAULT_HEADER: HeaderConfig = {visible:true,showCity:true,showCoords:true,showDate:true,showTime:true,style:'fill',size:'m'}
 export const MIN_FONT_SIZE = 80
-export const MAX_FONT_SIZE = 150
+export const MAX_FONT_SIZE = 200
 export const DEFAULT_FONT_SIZE = 115
 
 export function normalizeFontSize(value:unknown){
@@ -41,7 +41,36 @@ export function normalizeFontSize(value:unknown){
 	return Math.round(Math.min(MAX_FONT_SIZE,Math.max(MIN_FONT_SIZE,n))/5)*5
 }
 
-export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;header?:HeaderConfig}
+export const TIME_RANGES = ['day','days3','week','weeks2','month'] as const
+export type TimeRangeId = (typeof TIME_RANGES)[number]
+export const TIME_RANGE_DAYS: Record<TimeRangeId, number> = {day:1, days3:3, week:7, weeks2:14, month:16}
+export const RANGE_BLOCK_IDS = ['forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart'] as const
+export type RangeBlockId = (typeof RANGE_BLOCK_IDS)[number]
+export function isRangeBlock(id:BlockId):id is RangeBlockId {
+	return (RANGE_BLOCK_IDS as readonly string[]).includes(id)
+}
+export const DEFAULT_CARD_RANGE: Record<RangeBlockId, TimeRangeId> = {
+	forecast:'day', dailyForecast:'week', weekStrip:'week', weekTiles:'week', weekRange:'week',
+	temperatureChart:'day', precipitationChart:'day', windChart:'day',
+}
+
+export type PanelLayout = {blocks:BlockId[];spans:Partial<Record<BlockId,CardSpan>>;rowSpans?:Partial<Record<BlockId,CardRowSpan>>;ranges?:Partial<Record<BlockId,TimeRangeId>>;photoDataUrl?:string;screenWidth?:number;screenHeight?:number;colorMode?:ColorModeId;fontSize?:number;header?:HeaderConfig}
+
+export function getCardRange(layout:PanelLayout,id:BlockId):TimeRangeId {
+	if(!isRangeBlock(id))return 'day'
+	const value=layout.ranges?.[id]
+	return value&&TIME_RANGES.includes(value)?value:DEFAULT_CARD_RANGE[id]
+}
+export function getCardRangeDays(layout:PanelLayout,id:BlockId){
+	return TIME_RANGE_DAYS[getCardRange(layout,id)]
+}
+export function withCardRange(layout:PanelLayout,id:BlockId,range:TimeRangeId):PanelLayout {
+	if(!isRangeBlock(id))return layout
+	const ranges={...layout.ranges}
+	if(range===DEFAULT_CARD_RANGE[id])delete ranges[id]
+	else ranges[id]=range
+	return {...layout,ranges:Object.keys(ranges).length?ranges:undefined}
+}
 
 export function normalizeHeader(value:unknown):HeaderConfig|undefined{
 	if(!value||typeof value!=='object')return undefined
@@ -144,7 +173,7 @@ export type EditablePanel={
 
 export function normalizeLayout(value:unknown):PanelLayout{
 	if(!value||typeof value!=='object')return DEFAULT_LAYOUT
-	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;header?:unknown}
+	const source=value as {blocks?:unknown;order?:unknown;hidden?:unknown;showForecast?:unknown;spans?:unknown;rowSpans?:unknown;ranges?:unknown;photoDataUrl?:unknown;screenWidth?:unknown;screenHeight?:unknown;colorMode?:unknown;fontSize?:unknown;header?:unknown}
 	let candidates:unknown[]=Array.isArray(source.blocks)?source.blocks:[]
 	// Convert layouts stored by the first editor version.
 	if(!candidates.length&&Array.isArray(source.order)){
@@ -166,11 +195,18 @@ export function normalizeLayout(value:unknown):PanelLayout{
 		const rowSpan=rawRowSpans[id]
 		if(CARD_ROW_SPANS.includes(rowSpan as CardRowSpan)&&rowSpan!==1)rowSpans[id]=rowSpan as CardRowSpan
 	}
+	const rawRanges=source.ranges&&typeof source.ranges==='object'?source.ranges as Record<string,unknown>:{}
+	const ranges:Partial<Record<BlockId,TimeRangeId>>={}
+	for(const id of normalizedBlocks){
+		if(!isRangeBlock(id))continue
+		const range=rawRanges[id]
+		if(TIME_RANGES.includes(range as TimeRangeId)&&range!==DEFAULT_CARD_RANGE[id])ranges[id]=range as TimeRangeId
+	}
 	const photoDataUrl=typeof source.photoDataUrl==='string'&&/^data:image\/(?:png|jpeg|webp);base64,/.test(source.photoDataUrl)&&source.photoDataUrl.length<=1_500_000?source.photoDataUrl:undefined
 	const display=normalizeDisplay(source.screenWidth,source.screenHeight,source.colorMode)
 	const header=normalizeHeader(source.header)
 	const fontSize=normalizeFontSize(source.fontSize)
-	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,...(header?{header}:{})}
+	const extras={...(Object.keys(rowSpans).length?{rowSpans}:{}),...(Object.keys(ranges).length?{ranges}:{}),...(photoDataUrl?{photoDataUrl}:{}),fontSize,...(header?{header}:{})}
 	const layout:PanelLayout={blocks:normalizedBlocks,spans,...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 	return layoutFits(layout)?layout:{blocks:normalizedBlocks,spans:{},...extras,screenWidth:display.width,screenHeight:display.height,colorMode:display.colorMode}
 }

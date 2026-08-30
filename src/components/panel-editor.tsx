@@ -2,16 +2,16 @@
 
 import {useEffect,useMemo,useRef,useState,type MouseEvent,type ReactNode} from 'react'
 import {useRouter} from 'next/navigation'
-import {closestCenter,DndContext,KeyboardSensor,PointerSensor,useSensor,useSensors,type DragEndEvent} from '@dnd-kit/core'
+import {closestCorners,DndContext,KeyboardSensor,PointerSensor,useSensor,useSensors,type DragEndEvent,type DragStartEvent} from '@dnd-kit/core'
 import {arrayMove,rectSortingStrategy,sortableKeyboardCoordinates,SortableContext,useSortable} from '@dnd-kit/sortable'
-import {CSS} from '@dnd-kit/utilities'
 import {WeatherScreen,renderPanelCard} from '@/components/weather-screen'
 import {buildDisplay,COLOR_MODES,COLOR_MODE_IDS,MIN_SCREEN,MAX_SCREEN,sizePresetId,SIZE_PRESETS,type ColorModeId} from '@/lib/display'
-import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_FONT_SIZE,MIN_FONT_SIZE,findEmptySlot,getCardRowSpan,getCardSpan,getDefaultCardSpan,getFontSize,getHeader,layoutFits,normalizeFontSize,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_FONT_SIZE,MIN_FONT_SIZE,findEmptySlot,getCardRange,getCardRowSpan,getCardSpan,getDefaultCardSpan,getFontSize,getHeader,isRangeBlock,layoutFits,normalizeFontSize,withCardRange,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle,type TimeRangeId} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
-const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз на 7 дней',weekStrip:'Неделя · иконки',weekTiles:'Неделя · плитки',weekRange:'Неделя · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик BMP280'}
+const blockNames:Record<BlockId,string>={current:'Температура',overview:'Полная сводка',photo:'Фото',weatherScene:'Фото / погодная сцена',clock:'Часы · циферблат',forecast:'Почасовой прогноз',dailyForecast:'Прогноз по дням',weekStrip:'Дни · иконки',weekTiles:'Дни · плитки',weekRange:'Дни · диапазон',temperatureChart:'График температуры',precipitationChart:'График осадков',windChart:'График ветра',feels:'Ощущается',humidity:'Влажность',pressure:'Давление',precipitation:'Вероятность осадков',precipitationDetail:'Состав осадков',metrics:'Главные показатели',wind:'Ветер',sun:'Восход · закат · УФ',daylight:'Световой день',clouds:'Облачность',cloudLayers:'Слои облаков',visibility:'Видимость',dewPoint:'Точка росы',uv:'УФ-индекс',radiation:'Солнечная энергия',airQuality:'Качество воздуха',sensor:'Датчик'}
+const rangePips:{id:TimeRangeId;label:string}[]=[{id:'day',label:'День'},{id:'days3',label:'3 дня'},{id:'week',label:'Нед'},{id:'weeks2',label:'2 нед'},{id:'month',label:'Мес'}]
 const blockGroups:{label:string;ids:BlockId[]}[]=[
 	{label:'Главное',ids:['current','overview','weatherScene','clock','metrics']},
 	{label:'Прогнозы и графики',ids:['forecast','dailyForecast','weekStrip','weekTiles','weekRange','temperatureChart','precipitationChart','windChart']},
@@ -28,7 +28,7 @@ function cardBox(span:CardSpan,rowSpan:CardRowSpan){return {width:span*CELL+(spa
 
 function CardThumb({id,weather,span,rowSpan}:{id:BlockId;weather:WeatherScreenData;span:CardSpan;rowSpan:CardRowSpan}){
 	const box=cardBox(span,rowSpan)
-	const scale=Math.min(220/box.width,(rowSpan===2?196:108)/box.height)
+	const scale=Math.min(156/box.width,(rowSpan===2?128:78)/box.height)
 	return <div className="card-thumb" style={{width:box.width*scale,height:box.height*scale}}>
 		<div className="card-thumb-stage" style={{width:box.width,height:box.height,transform:`scale(${scale})`}}>
 			<div style={{display:'flex',width:box.width,height:box.height}}>{renderPanelCard(id,weather,rowSpan===1,span)}</div>
@@ -36,13 +36,11 @@ function CardThumb({id,weather,span,rowSpan}:{id:BlockId;weather:WeatherScreenDa
 	</div>
 }
 
-function InlineSortableBlock({id,selected,onSelect,onRemove,canRemove,children}:{id:BlockId;selected:boolean;onSelect:()=>void;onRemove:()=>void;canRemove:boolean;children:ReactNode}){
-	const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id})
-	return <div ref={setNodeRef} className={`inline-sortable${isDragging?' is-dragging':''}${selected?' is-selected':''}`} style={{transform:CSS.Translate.toString(transform),transition}} onClick={(event:MouseEvent)=>{event.stopPropagation();onSelect()}}>
-		<div className="card-edit-bar">
-			<button className="inline-drag-handle" type="button" aria-label={`Переместить ${blockNames[id]}`} {...attributes} {...listeners}><span className="grip-dots" aria-hidden="true"><i/><i/><i/><i/><i/><i/></span></button>
-			<button className="inline-remove" type="button" onClick={event=>{event.stopPropagation();onRemove()}} disabled={!canRemove} aria-label={`Удалить ${blockNames[id]}`}><span className="remove-x" aria-hidden="true"/></button>
-		</div>
+function InlineSortableBlock({id,selected,onSelect,previewScale,children}:{id:BlockId;selected:boolean;onSelect:()=>void;previewScale:number;children:ReactNode}){
+	const {attributes,listeners,setNodeRef,transform,isDragging}=useSortable({id,animateLayoutChanges:()=>false})
+	const scale=Math.max(previewScale,.12)
+	const style=transform?{transform:`translate3d(${transform.x/scale}px,${transform.y/scale}px,0)`,zIndex:80}:undefined
+	return <div ref={setNodeRef} style={style} className={`inline-sortable${isDragging?' is-dragging':''}${selected?' is-selected':''}`} {...attributes} {...listeners} aria-label={`${blockNames[id]}. Перетащите, чтобы сменить место`} onClick={(event:MouseEvent)=>{event.stopPropagation();onSelect()}}>
 		<div className="inline-card-content">{children}</div>
 	</div>
 }
@@ -52,15 +50,18 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const [cities,setCities]=useState<City[]>([]);const [searching,setSearching]=useState(false);const [searchAttempted,setSearchAttempted]=useState(false);const [locating,setLocating]=useState(false);const [cityError,setCityError]=useState('');const [previewLoading,setPreviewLoading]=useState(false)
 	const [message,setMessage]=useState('');const [saving,setSaving]=useState(false);const [previewScale,setPreviewScale]=useState(1);const previewHost=useRef<HTMLDivElement>(null);const previewStage=useRef<HTMLDivElement>(null)
 	const [selectedId,setSelectedId]=useState<BlockId|null>(null);const [selectedHeader,setSelectedHeader]=useState(false);const [adding,setAdding]=useState(false)
+	const [dragId,setDragId]=useState<BlockId|null>(null)
 	const [customSize,setCustomSize]=useState(()=>sizePresetId(initialPanel.screenWidth,initialPanel.screenHeight)==='custom')
 	const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
 	const baseUrl=`${origin}/d/${panel.slug}`;const screenUrl=`${baseUrl}/screen.png?v=${encodeURIComponent(panel.updatedAt)}`
 
+	const inspectorOpen=Boolean(selectedId||adding||selectedHeader)
 	useEffect(()=>{
 		const stage=previewStage.current
 		if(!stage)return
 		const resize=()=>{
-			const maxW=Math.max(160,stage.clientWidth-36)
+			const inspectorReserve=inspectorOpen?460:0
+			const maxW=Math.max(160,stage.clientWidth-36-inspectorReserve)
 			const maxH=Math.max(160,window.innerHeight-220)
 			setPreviewScale(Math.min(1,Math.max(.12,Math.min(maxW/panel.screenWidth,maxH/panel.screenHeight))))
 		}
@@ -69,7 +70,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 		observer.observe(stage)
 		window.addEventListener('resize',resize)
 		return()=>{observer.disconnect();window.removeEventListener('resize',resize)}
-	},[panel.screenWidth,panel.screenHeight])
+	},[panel.screenWidth,panel.screenHeight,inspectorOpen])
 	useEffect(()=>{
 		if(cityQuery.trim().length<2||cityQuery===panel.cityName)return
 		const controller=new AbortController();const timer=setTimeout(async()=>{setSearching(true);setCityError('');try{const response=await fetch(`/api/cities?q=${encodeURIComponent(cityQuery)}`,{signal:controller.signal});const data=await response.json();setCities(response.ok?data.results:[]);setSearchAttempted(true);if(!response.ok)setCityError(data.error??'Не удалось найти город')}catch{if(!controller.signal.aborted){setCities([]);setSearchAttempted(true);setCityError('Поиск временно недоступен')}}finally{if(!controller.signal.aborted)setSearching(false)}},350)
@@ -82,16 +83,28 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	useEffect(()=>{if(selectedId&&!panel.layout.blocks.includes(selectedId))setSelectedId(panel.layout.blocks[0]??null)},[panel.layout.blocks,selectedId])
 
 	const unusedBlocks=useMemo(()=>BLOCK_IDS.filter(id=>!panel.layout.blocks.includes(id)),[panel.layout.blocks])
-	function onDragEnd(event:DragEndEvent){const active=event.active.id as BlockId;const over=event.over?.id as BlockId|undefined;if(!over||active===over)return;const oldIndex=panel.layout.blocks.indexOf(active);const newIndex=panel.layout.blocks.indexOf(over);const layout={...panel.layout,blocks:arrayMove(panel.layout.blocks,oldIndex,newIndex)};if(layoutFits(layout))setPanel({...panel,layout});else setMessage('В таком порядке карточки не помещаются в два ряда.')}
+	function clearDrag(){setDragId(null)}
+	function onDragStart(event:DragStartEvent){
+		const id=event.active.id as BlockId
+		setDragId(id);setSelectedId(id);setAdding(false);setSelectedHeader(false)
+	}
+	function onDragEnd(event:DragEndEvent){
+		clearDrag()
+		const active=event.active.id as BlockId;const over=event.over?.id as BlockId|undefined;if(!over||active===over)return
+		const oldIndex=panel.layout.blocks.indexOf(active);const newIndex=panel.layout.blocks.indexOf(over)
+		const layout={...panel.layout,blocks:arrayMove(panel.layout.blocks,oldIndex,newIndex)}
+		if(layoutFits(layout))setPanel({...panel,layout});else setMessage('В таком порядке карточки не помещаются в два ряда.')
+	}
 	function replaceBlock(from:BlockId,to:BlockId){
 		if(from===to)return
 		const spans={...panel.layout.spans};const span=spans[from];delete spans[from];if(span)spans[to]=span
 		const rowSpans={...panel.layout.rowSpans};const rowSpan=rowSpans[from];delete rowSpans[from];if(rowSpan)rowSpans[to]=rowSpan
-		setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.map(id=>id===from?to:id),spans,rowSpans:Object.keys(rowSpans).length?rowSpans:undefined}})
+		const ranges={...panel.layout.ranges};const range=ranges[from];delete ranges[from];if(range&&isRangeBlock(to))ranges[to]=range
+		setPanel({...panel,layout:{...panel.layout,blocks:panel.layout.blocks.map(id=>id===from?to:id),spans,rowSpans:Object.keys(rowSpans).length?rowSpans:undefined,ranges:Object.keys(ranges).length?ranges:undefined}})
 		setSelectedId(to)
 	}
 	function resizeBlock(id:BlockId,size:{span?:CardSpan;rowSpan?:CardRowSpan}){const layout=withCardSize(panel.layout,id,size);if(layoutFits(layout)){setPanel({...panel,layout});setMessage('')}else setMessage('Эта ширина или высота не помещается в сетку 4×2.')}
-	function removeBlock(id:BlockId){if(panel.layout.blocks.length===1)return;const spans={...panel.layout.spans};delete spans[id];const rowSpans={...panel.layout.rowSpans};delete rowSpans[id];const blocks=panel.layout.blocks.filter(item=>item!==id);setPanel({...panel,layout:{...panel.layout,blocks,spans,rowSpans:Object.keys(rowSpans).length?rowSpans:undefined}});if(selectedId===id)setSelectedId(blocks[0]??null)}
+	function removeBlock(id:BlockId){if(panel.layout.blocks.length===1)return;const spans={...panel.layout.spans};delete spans[id];const rowSpans={...panel.layout.rowSpans};delete rowSpans[id];const ranges={...panel.layout.ranges};delete ranges[id];const blocks=panel.layout.blocks.filter(item=>item!==id);setPanel({...panel,layout:{...panel.layout,blocks,spans,rowSpans:Object.keys(rowSpans).length?rowSpans:undefined,ranges:Object.keys(ranges).length?ranges:undefined}});if(selectedId===id)setSelectedId(blocks[0]??null)}
 	function layoutWithAdded(id:BlockId){const preferred=getDefaultCardSpan(id);const withPreferred={...panel.layout,blocks:[...panel.layout.blocks,id],spans:{...panel.layout.spans,...(preferred===1?{}:{[id]:preferred})}};if(layoutFits(withPreferred))return withPreferred;const fallback={...panel.layout,blocks:[...panel.layout.blocks,id]};return layoutFits(fallback)?fallback:null}
 	function addBlock(id:BlockId){if(panel.layout.blocks.length>=MAX_BLOCKS||panel.layout.blocks.includes(id))return;const layout=layoutWithAdded(id);if(layout){setPanel({...panel,layout});setSelectedId(id);setAdding(false)}else setMessage('На экране не осталось места для этой карточки.')}
 	function chooseCity(city:City){setPanel({...panel,cityName:city.name,latitude:city.latitude,longitude:city.longitude,timezone:city.timezone});setCityQuery(city.name);setCities([]);setSearchAttempted(false);setCityError('')}
@@ -153,10 +166,10 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 			<section className="control-section link-section"><div className="section-heading"><span>02</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
 			<div className="save-dock"><button className="primary-button" onClick={save} disabled={saving}>{saving?'Сохраняем…':'Сохранить изменения'}</button>{message&&<p className="save-message" role="status">{message}</p>}</div>
 		</aside><section className="preview-area" onClick={()=>{setAdding(false);setSelectedId(null);setSelectedHeader(false)}}>
-			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
+			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b><small className="layout-hint">Карточки можно перетаскивать. Удаление — в настройках выбранной карточки.</small></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="preview-stage" ref={previewStage}>
-			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className="screen-bezel component-host" ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}><div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}} onRemove={()=>removeBlock(id)} canRemove={panel.layout.blocks.length>1}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
+			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className={`screen-bezel component-host${dragId?' is-reordering':''}`} ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}><div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
+				<DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={clearDrag}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} previewScale={previewScale} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
 			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>{panel.screenWidth}×{panel.screenHeight}</span><i/><span>{colorMeta.colors?`${colorMeta.colors}C`:'RGB'}</span></div></div>
 			{(selected||adding||selectedHeader)&&<aside className="card-inspector" onClick={event=>event.stopPropagation()}>
 				{selectedHeader?<>
@@ -172,15 +185,21 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 					<div className="size-board">
 						<label>Свой заголовок<input value={header.title??''} placeholder={panel.cityName} disabled={!header.visible} onChange={e=>patchHeader({title:e.target.value.slice(0,48)||undefined})}/><small>Пустое поле — название города</small></label>
 						<div><span>Стиль</span><div className="size-pips header-style-pips">{([{id:'fill',label:'Заливка'},{id:'invert',label:'Светлая'},{id:'line',label:'Линия'}] as {id:HeaderStyle;label:string}[]).map(item=><button key={item.id} type="button" className={header.style===item.id?'is-on':''} disabled={!header.visible} onClick={()=>patchHeader({style:item.id})}>{item.label}</button>)}</div></div>
-						<div><span>Высота</span><div className="size-pips">{([{id:'s',label:'S'},{id:'m',label:'M'},{id:'l',label:'L'}] as {id:HeaderSize;label:string}[]).map(item=><button key={item.id} type="button" className={header.size===item.id?'is-on':''} disabled={!header.visible} onClick={()=>patchHeader({size:item.id})}>{item.label}</button>)}</div></div>
+						<div><span>Высота</span><div className="size-pips header-style-pips">{([{id:'s',label:'S'},{id:'m',label:'M'},{id:'l',label:'L'}] as {id:HeaderSize;label:string}[]).map(item=><button key={item.id} type="button" className={header.size===item.id?'is-on':''} disabled={!header.visible} onClick={()=>patchHeader({size:item.id})}>{item.label}</button>)}</div></div>
 						<button className="text-button" type="button" onClick={()=>setPanel({...panel,layout:{...panel.layout,header:DEFAULT_HEADER}})}>Сбросить шапку</button>
 					</div>
 				</>:<>
 				<div className="inspector-kicker">{adding?'Новая карточка':'Карточка'}</div>
 				<h2>{adding?'Выберите тип':selected?blockNames[selected]:'Карточка'}</h2>
 				{selected&&!adding&&<div className="size-board">
+					<p className="range-hint">Перетащите карточку на экране, чтобы сменить место.</p>
 					<div><span>Ширина</span><div className="size-pips">{CARD_SPANS.map(value=><button key={value} type="button" className={selectedSpan===value?'is-on':''} disabled={!layoutFits(withCardSize(panel.layout,selected,{span:value}))} onClick={()=>resizeBlock(selected,{span:value})}>{value}/4</button>)}</div></div>
-					<div><span>Высота</span><div className="size-pips">{CARD_ROW_SPANS.map(value=><button key={value} type="button" className={selectedRowSpan===value?'is-on':''} disabled={!layoutFits(withCardSize(panel.layout,selected,{rowSpan:value}))} onClick={()=>resizeBlock(selected,{rowSpan:value})}>{value}/2</button>)}</div></div>
+					<div><span>Высота</span><div className="size-pips pair-pips">{CARD_ROW_SPANS.map(value=><button key={value} type="button" className={selectedRowSpan===value?'is-on':''} disabled={!layoutFits(withCardSize(panel.layout,selected,{rowSpan:value}))} onClick={()=>resizeBlock(selected,{rowSpan:value})}>{value}/2</button>)}</div></div>
+					<button className="text-button danger inspector-remove" type="button" onClick={()=>removeBlock(selected)} disabled={panel.layout.blocks.length<=1}>Удалить карточку</button>
+				</div>}
+				{selected&&!adding&&isRangeBlock(selected)&&<div className="size-board">
+					<div><span>Диапазон</span><div className="size-pips range-pips">{rangePips.map(item=><button key={item.id} type="button" className={getCardRange(panel.layout,selected)===item.id?'is-on':''} onClick={()=>setPanel({...panel,layout:withCardRange(panel.layout,selected,item.id)})}>{item.label}</button>)}</div></div>
+					<p className="range-hint">День, 3 дня, неделя и 2 недели — как на экране. «Мес» — максимум прогноза Open-Meteo, 16 дней.</p>
 				</div>}
 				<div className="inspector-catalog">{blockGroups.map(group=>{const ids=group.ids.filter(id=>catalogIds.includes(id));return ids.length?<section key={group.label}><h3>{group.label}</h3><div className="thumb-grid">{ids.map(id=><button key={id} type="button" className={`thumb-pick${selected===id?' is-current':''}`} onClick={()=>adding?addBlock(id):selected&&replaceBlock(selected,id)}><CardThumb id={id} weather={previewWeather} span={catalogSpan} rowSpan={catalogRowSpan}/><b>{blockNames[id]}</b></button>)}</div></section>:null})}</div>
 				</>}

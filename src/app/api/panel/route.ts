@@ -22,7 +22,8 @@ const schema = z.object({
 		spans: z.record(z.string(),z.number().int().min(1).max(4)).refine(value=>Object.keys(value).every(id=>BLOCK_IDS.includes(id as typeof BLOCK_IDS[number])),'Неизвестная карточка'),
 		rowSpans: z.record(z.string(),z.number().int().min(1).max(2)).refine(value=>Object.keys(value).every(id=>BLOCK_IDS.includes(id as typeof BLOCK_IDS[number])),'Неизвестная карточка').optional(),
 		photoDataUrl:z.string().max(1_500_000).regex(/^data:image\/(?:png|jpeg|webp);base64,/).optional(),
-		fontSize:z.number().int().min(80).max(150).optional(),
+		fontSize:z.number().int().min(80).max(200).optional(),
+		ranges:z.record(z.string(),z.enum(['day','days3','week','weeks2','month'])).optional(),
 		header:z.object({
 			visible:z.boolean(),
 			showCity:z.boolean(),

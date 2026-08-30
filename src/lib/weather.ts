@@ -21,8 +21,8 @@ export const DEFAULT_WEATHER_SETTINGS: WeatherSettings = {
 }
 
 export type WeatherForecastItem = {time: string; mark: string; temp: string}
-export type WeatherHourlyPoint = {time:string;temperature:number;feelsLike:number;precipitationProbability:number;precipitation:number;windSpeed:number;windGust:number;humidity:number;pressure:number;cloudCover:number;visibility:number}
-export type WeatherDailyItem = {day:string;weatherCode:number;weatherLabel:string;high:number;low:number;precipitationProbability:number;precipitationSum:number;windSpeedMax:number}
+export type WeatherHourlyPoint = {time:string;date:string;day:string;dayNum:string;mark:string;weatherCode:number;temperature:number;feelsLike:number;precipitationProbability:number;precipitation:number;windSpeed:number;windGust:number;humidity:number;pressure:number;cloudCover:number;visibility:number}
+export type WeatherDailyItem = {date:string;day:string;dayNum:string;weatherCode:number;weatherLabel:string;high:number;low:number;precipitationProbability:number;precipitationSum:number;windSpeedMax:number}
 export type WeatherScreenData = {
 	city: string
 	coordinates: string
@@ -147,7 +147,7 @@ async function loadMeteo(settings: WeatherSettings): Promise<MeteoBundle> {
 			current:'temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation,rain,showers,snowfall,weather_code,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,pressure_msl,surface_pressure,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day',
 			hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m',
 			daily:'weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,rain_sum,showers_sum,snowfall_sum,precipitation_hours,precipitation_probability_max,sunrise,sunset,daylight_duration,sunshine_duration,uv_index_max,uv_index_clear_sky_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,shortwave_radiation_sum,et0_fao_evapotranspiration',
-			timezone:settings.timezone, forecast_days:'7', forecast_hours:'24', wind_speed_unit:'ms',
+			timezone:settings.timezone, forecast_days:'16', wind_speed_unit:'ms',
 		})
 		const airParams=new URLSearchParams({latitude:String(settings.latitude),longitude:String(settings.longitude),current:'european_aqi,us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',timezone:settings.timezone})
 		const [response,air] = await Promise.all([
@@ -183,9 +183,14 @@ export async function getWeatherScreenData(settings: WeatherSettings = DEFAULT_W
 	const precipitationUnit=settings.unitSystem==='IMPERIAL'?'in':'мм'
 	const visibilityFactor=settings.unitSystem==='IMPERIAL'?0.000621371:0.001
 	const visibilityUnit=settings.unitSystem==='IMPERIAL'?'mi':'км'
-	const hourly:WeatherHourlyPoint[]=data.hourly.time.map((time,index)=>({time:time.slice(11,16),temperature:Math.round(convertTemperature(data.hourly.temperature_2m[index],settings.unitSystem)),feelsLike:Math.round(convertTemperature(data.hourly.apparent_temperature[index],settings.unitSystem)),precipitationProbability:Math.round(data.hourly.precipitation_probability[index]??0),precipitation:Number(((data.hourly.precipitation[index]??0)*precipitationFactor).toFixed(2)),windSpeed:Math.round(convertWind(data.hourly.wind_speed_10m[index],settings.unitSystem)),windGust:Math.round(convertWind(data.hourly.wind_gusts_10m[index],settings.unitSystem)),humidity:Math.round(data.hourly.relative_humidity_2m[index]),pressure:Math.round(data.hourly.surface_pressure[index]*(settings.unitSystem==='IMPERIAL'?0.029529983:0.750061683)),cloudCover:Math.round(data.hourly.cloud_cover[index]),visibility:Number((data.hourly.visibility[index]*visibilityFactor).toFixed(1))}))
 	const dayFormatter=new Intl.DateTimeFormat(settings.language==='RU'?'ru-RU':'en-GB',{weekday:'short',timeZone:'UTC'})
-	const daily:WeatherDailyItem[]=data.daily.time.map((time,index)=>({day:dayFormatter.format(new Date(`${time}T12:00:00Z`)).toUpperCase(),weatherCode:data.daily.weather_code[index],weatherLabel:labelFor(settings.language,data.daily.weather_code[index]),high:Math.round(convertTemperature(data.daily.temperature_2m_max[index],settings.unitSystem)),low:Math.round(convertTemperature(data.daily.temperature_2m_min[index],settings.unitSystem)),precipitationProbability:Math.round(data.daily.precipitation_probability_max[index]??0),precipitationSum:Number(((data.daily.precipitation_sum[index]??0)*precipitationFactor).toFixed(1)),windSpeedMax:Math.round(convertWind(data.daily.wind_speed_10m_max[index],settings.unitSystem))}))
+	const weekdayOf=(isoDate:string)=>dayFormatter.format(new Date(`${isoDate}T12:00:00Z`)).toUpperCase()
+	const hourly:WeatherHourlyPoint[]=data.hourly.time.map((time,index)=>{
+		const date=time.slice(0,10)
+		const code=data.hourly.weather_code[index]
+		return {time:time.slice(11,16),date,day:weekdayOf(date),dayNum:date.slice(8,10),mark:labelFor(settings.language,code),weatherCode:code,temperature:Math.round(convertTemperature(data.hourly.temperature_2m[index],settings.unitSystem)),feelsLike:Math.round(convertTemperature(data.hourly.apparent_temperature[index],settings.unitSystem)),precipitationProbability:Math.round(data.hourly.precipitation_probability[index]??0),precipitation:Number(((data.hourly.precipitation[index]??0)*precipitationFactor).toFixed(2)),windSpeed:Math.round(convertWind(data.hourly.wind_speed_10m[index],settings.unitSystem)),windGust:Math.round(convertWind(data.hourly.wind_gusts_10m[index],settings.unitSystem)),humidity:Math.round(data.hourly.relative_humidity_2m[index]),pressure:Math.round(data.hourly.surface_pressure[index]*(settings.unitSystem==='IMPERIAL'?0.029529983:0.750061683)),cloudCover:Math.round(data.hourly.cloud_cover[index]),visibility:Number((data.hourly.visibility[index]*visibilityFactor).toFixed(1))}
+	})
+	const daily:WeatherDailyItem[]=data.daily.time.map((time,index)=>({date:time,day:weekdayOf(time),dayNum:time.slice(8,10),weatherCode:data.daily.weather_code[index],weatherLabel:labelFor(settings.language,data.daily.weather_code[index]),high:Math.round(convertTemperature(data.daily.temperature_2m_max[index],settings.unitSystem)),low:Math.round(convertTemperature(data.daily.temperature_2m_min[index],settings.unitSystem)),precipitationProbability:Math.round(data.daily.precipitation_probability_max[index]??0),precipitationSum:Number(((data.daily.precipitation_sum[index]??0)*precipitationFactor).toFixed(1)),windSpeedMax:Math.round(convertWind(data.daily.wind_speed_10m_max[index],settings.unitSystem))}))
 	const aq=airData?.current
 	const layout=normalizeLayout(settings.layout)
 	return {

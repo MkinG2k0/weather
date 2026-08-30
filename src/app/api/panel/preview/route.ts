@@ -7,7 +7,7 @@ import {getWeatherScreenData} from '@/lib/weather'
 const schema=z.object({
 	cityName:z.string().trim().min(1).max(120),latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180),timezone:z.string().min(1).max(80),
 	language:z.enum(['RU','EN']),unitSystem:z.enum(['METRIC','IMPERIAL']),
-	layout:z.object({blocks:z.array(z.enum(BLOCK_IDS)).min(1).max(MAX_BLOCKS),spans:z.record(z.string(),z.number().int().min(1).max(4)),rowSpans:z.record(z.string(),z.number().int().min(1).max(2)).optional(),photoDataUrl:z.string().max(1_500_000).regex(/^data:image\/(?:png|jpeg|webp);base64,/).optional(),fontSize:z.number().int().min(80).max(150).optional(),header:z.object({visible:z.boolean(),showCity:z.boolean(),showCoords:z.boolean(),showDate:z.boolean(),showTime:z.boolean(),title:z.string().trim().max(48).optional(),style:z.enum(['fill','invert','line']),size:z.enum(['s','m','l'])}).optional()}).refine(value=>layoutFits(value as PanelLayout)),
+	layout:z.object({blocks:z.array(z.enum(BLOCK_IDS)).min(1).max(MAX_BLOCKS),spans:z.record(z.string(),z.number().int().min(1).max(4)),rowSpans:z.record(z.string(),z.number().int().min(1).max(2)).optional(),ranges:z.record(z.string(),z.enum(['day','days3','week','weeks2','month'])).optional(),photoDataUrl:z.string().max(1_500_000).regex(/^data:image\/(?:png|jpeg|webp);base64,/).optional(),fontSize:z.number().int().min(80).max(200).optional(),header:z.object({visible:z.boolean(),showCity:z.boolean(),showCoords:z.boolean(),showDate:z.boolean(),showTime:z.boolean(),title:z.string().trim().max(48).optional(),style:z.enum(['fill','invert','line']),size:z.enum(['s','m','l'])}).optional()}).refine(value=>layoutFits(value as PanelLayout)),
 })
 
 export async function POST(request:Request){
