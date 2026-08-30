@@ -23,10 +23,10 @@ function ray(cx: number, cy: number, r: number, deg: number) {
 	return {x1: cx + Math.cos(rad) * inner, y1: cy + Math.sin(rad) * inner, x2: cx + Math.cos(rad) * outer, y2: cy + Math.sin(rad) * outer}
 }
 
-function Sun({cx = 16, cy = 16, r = 6}: {cx?: number; cy?: number; r?: number}) {
+function Sun({cx = 16, cy = 16, r = 6, fill}: {cx?: number; cy?: number; r?: number; fill?: string}) {
 	const degrees = [0, 45, 90, 135, 180, 225, 270, 315]
 	return <g>
-		<circle cx={cx} cy={cy} r={r}/>
+		<circle cx={cx} cy={cy} r={r} fill={fill}/>
 		{degrees.map(deg => {
 			const line = ray(cx, cy, r, deg)
 			return <line key={deg} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}/>
@@ -37,10 +37,10 @@ function Sun({cx = 16, cy = 16, r = 6}: {cx?: number; cy?: number; r?: number}) 
 export function WeatherIcon({code, size, fill=false, color='#000', accent}: WeatherIconProps) {
 	const kind = iconKind(code)
 	const mark = accent ?? color
-	return <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" preserveAspectRatio="xMidYMid meet" style={fill?{display:'flex',width:'100%',height:'100%',minWidth:size,minHeight:size,maxHeight:'100%'}:{display:'flex',width:size,height:size,flexShrink:0}}>
-		{kind === 'sun' ? <Sun/> : null}
-		{kind === 'mostlyClear' ? <g><Sun cx={11} cy={12} r={5}/><path d="M10 22.5h13.4a3.4 3.4 0 0 0 .3-6.7 5.6 5.6 0 0 0-10.6-1.1A4 4 0 0 0 10 22.5z"/></g> : null}
-		{kind === 'partlyCloudy' ? <g><Sun cx={21} cy={10.5} r={4.4}/><path d="M10.5 22.2h13.2a3.6 3.6 0 0 0 .4-7.2 6.2 6.2 0 0 0-11.8-1.3 4.4 4.4 0 0 0-1.8 8.5z"/></g> : null}
+	return <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" preserveAspectRatio="xMidYMid meet" style={fill?{display:'flex',width:'100%',height:'100%',minWidth:0,minHeight:0,maxWidth:'100%',maxHeight:'100%'}:{display:'flex',width:size,height:size,maxWidth:'100%',maxHeight:'100%',flexShrink:1}}>
+		{kind === 'sun' ? <Sun fill={mark}/> : null}
+		{kind === 'mostlyClear' ? <g><Sun cx={11} cy={12} r={5} fill={mark}/><path d="M10 22.5h13.4a3.4 3.4 0 0 0 .3-6.7 5.6 5.6 0 0 0-10.6-1.1A4 4 0 0 0 10 22.5z"/></g> : null}
+		{kind === 'partlyCloudy' ? <g><Sun cx={21} cy={10.5} r={4.4} fill={mark}/><path d="M10.5 22.2h13.2a3.6 3.6 0 0 0 .4-7.2 6.2 6.2 0 0 0-11.8-1.3 4.4 4.4 0 0 0-1.8 8.5z"/></g> : null}
 		{kind === 'overcast' ? <path d="M8 13.2a5.4 5.4 0 0 1 10.2-1.4 4.8 4.8 0 0 1 6.3 4.6 3.6 3.6 0 0 1-.2 7.1H10.4A4.6 4.6 0 0 1 8 13.2z"/> : null}
 		{kind === 'fog' ? <g><path d="M10.5 18.2h13.2a3.6 3.6 0 0 0 .4-7.2 6.2 6.2 0 0 0-11.8-1.3 4.4 4.4 0 0 0-1.8 8.5z"/><line x1="7" y1="22" x2="22" y2="22"/><line x1="7" y1="25.2" x2="25" y2="25.2"/><line x1="7" y1="28.4" x2="22" y2="28.4"/></g> : null}
 		{kind === 'drizzle' ? <g><path d="M10.5 16.2h13.2a3.6 3.6 0 0 0 .4-7.2 6.2 6.2 0 0 0-11.8-1.3 4.4 4.4 0 0 0-1.8 8.5z"/><line x1="11" y1="21" x2="9.6" y2="25.6"/><line x1="16" y1="21" x2="14.6" y2="25.6"/><line x1="21" y1="21" x2="19.6" y2="25.6"/></g> : null}

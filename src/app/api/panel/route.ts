@@ -1,7 +1,7 @@
 import {z} from 'zod'
 import {getCurrentUser} from '@/lib/auth'
 import {normalizeDisplay} from '@/lib/display'
-import {BLOCK_IDS,MAX_BLOCKS,layoutFits,type PanelLayout} from '@/lib/panel-config'
+import {BLOCK_IDS,MAX_BLOCKS,layoutFits,normalizeFontSize,type PanelLayout} from '@/lib/panel-config'
 import {serializePanel} from '@/lib/panel-data'
 import {prisma} from '@/lib/prisma'
 
@@ -22,6 +22,17 @@ const schema = z.object({
 		spans: z.record(z.string(),z.number().int().min(1).max(4)).refine(value=>Object.keys(value).every(id=>BLOCK_IDS.includes(id as typeof BLOCK_IDS[number])),'Неизвестная карточка'),
 		rowSpans: z.record(z.string(),z.number().int().min(1).max(2)).refine(value=>Object.keys(value).every(id=>BLOCK_IDS.includes(id as typeof BLOCK_IDS[number])),'Неизвестная карточка').optional(),
 		photoDataUrl:z.string().max(1_500_000).regex(/^data:image\/(?:png|jpeg|webp);base64,/).optional(),
+		fontSize:z.number().int().min(80).max(150).optional(),
+		header:z.object({
+			visible:z.boolean(),
+			showCity:z.boolean(),
+			showCoords:z.boolean(),
+			showDate:z.boolean(),
+			showTime:z.boolean(),
+			title:z.string().trim().max(48).optional(),
+			style:z.enum(['fill','invert','line']),
+			size:z.enum(['s','m','l']),
+		}).optional(),
 	}).refine(value=>layoutFits(value as PanelLayout),'Карточки не помещаются в два ряда'),
 })
 
@@ -36,7 +47,7 @@ export async function PATCH(request: Request) {
 		if (!panel) return Response.json({error: 'Панель не найдена'}, {status: 404})
 		const updated = await prisma.weatherPanel.update({where: {id: panel.id}, data: {
 			...rest,
-			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode},
+			layout: {...layout, screenWidth: display.width, screenHeight: display.height, colorMode: display.colorMode, fontSize: normalizeFontSize(layout.fontSize)},
 		}})
 		return Response.json(serializePanel(updated))
 	} catch (error) {

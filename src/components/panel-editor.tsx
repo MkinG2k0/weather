@@ -7,7 +7,7 @@ import {arrayMove,rectSortingStrategy,sortableKeyboardCoordinates,SortableContex
 import {CSS} from '@dnd-kit/utilities'
 import {WeatherScreen,renderPanelCard} from '@/components/weather-screen'
 import {buildDisplay,COLOR_MODES,COLOR_MODE_IDS,MIN_SCREEN,MAX_SCREEN,sizePresetId,SIZE_PRESETS,type ColorModeId} from '@/lib/display'
-import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,MAX_BLOCKS,findEmptySlot,getCardRowSpan,getCardSpan,getDefaultCardSpan,layoutFits,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel} from '@/lib/panel-config'
+import {BLOCK_IDS,CARD_ROW_SPANS,CARD_SPANS,DEFAULT_HEADER,MAX_BLOCKS,MAX_FONT_SIZE,MIN_FONT_SIZE,findEmptySlot,getCardRowSpan,getCardSpan,getDefaultCardSpan,getFontSize,getHeader,layoutFits,normalizeFontSize,withCardSize,type BlockId,type CardRowSpan,type CardSpan,type EditablePanel,type HeaderConfig,type HeaderSize,type HeaderStyle} from '@/lib/panel-config'
 import type {WeatherScreenData} from '@/lib/weather'
 
 type City={id:number|string;name:string;label:string;region:string;country:string;latitude:number;longitude:number;timezone:string}
@@ -40,8 +40,8 @@ function InlineSortableBlock({id,selected,onSelect,onRemove,canRemove,children}:
 	const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id})
 	return <div ref={setNodeRef} className={`inline-sortable${isDragging?' is-dragging':''}${selected?' is-selected':''}`} style={{transform:CSS.Translate.toString(transform),transition}} onClick={(event:MouseEvent)=>{event.stopPropagation();onSelect()}}>
 		<div className="card-edit-bar">
-			<button className="inline-drag-handle" type="button" aria-label={`Переместить ${blockNames[id]}`} {...attributes} {...listeners}>⠿</button>
-			<button className="inline-remove" type="button" onClick={event=>{event.stopPropagation();onRemove()}} disabled={!canRemove} aria-label={`Удалить ${blockNames[id]}`}>×</button>
+			<button className="inline-drag-handle" type="button" aria-label={`Переместить ${blockNames[id]}`} {...attributes} {...listeners}><span className="grip-dots" aria-hidden="true"><i/><i/><i/><i/><i/><i/></span></button>
+			<button className="inline-remove" type="button" onClick={event=>{event.stopPropagation();onRemove()}} disabled={!canRemove} aria-label={`Удалить ${blockNames[id]}`}><span className="remove-x" aria-hidden="true"/></button>
 		</div>
 		<div className="inline-card-content">{children}</div>
 	</div>
@@ -51,7 +51,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const router=useRouter();const [panel,setPanel]=useState(initialPanel);const [weather,setWeather]=useState(initialWeather);const [cityQuery,setCityQuery]=useState(panel.cityName)
 	const [cities,setCities]=useState<City[]>([]);const [searching,setSearching]=useState(false);const [searchAttempted,setSearchAttempted]=useState(false);const [locating,setLocating]=useState(false);const [cityError,setCityError]=useState('');const [previewLoading,setPreviewLoading]=useState(false)
 	const [message,setMessage]=useState('');const [saving,setSaving]=useState(false);const [previewScale,setPreviewScale]=useState(1);const previewHost=useRef<HTMLDivElement>(null);const previewStage=useRef<HTMLDivElement>(null)
-	const [selectedId,setSelectedId]=useState<BlockId|null>(null);const [adding,setAdding]=useState(false)
+	const [selectedId,setSelectedId]=useState<BlockId|null>(null);const [selectedHeader,setSelectedHeader]=useState(false);const [adding,setAdding]=useState(false)
 	const [customSize,setCustomSize]=useState(()=>sizePresetId(initialPanel.screenWidth,initialPanel.screenHeight)==='custom')
 	const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
 	const baseUrl=`${origin}/d/${panel.slug}`;const screenUrl=`${baseUrl}/screen.png?v=${encodeURIComponent(panel.updatedAt)}`
@@ -115,6 +115,8 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	async function rotate(){if(!confirm('Старая ссылка перестанет работать. Создать новую?'))return;const response=await fetch('/api/panel/rotate',{method:'POST'});const data=await response.json();if(response.ok){setPanel(data);setMessage('Персональная ссылка заменена.')}else setMessage(data.error??'Не удалось заменить ссылку')}
 	async function copy(value:string){await navigator.clipboard.writeText(value);setMessage('Ссылка скопирована.')}
 	async function logout(){await fetch('/api/auth/logout',{method:'POST'});router.refresh()}
+	function selectHeader(){setSelectedHeader(true);setSelectedId(null);setAdding(false)}
+	function patchHeader(next:Partial<HeaderConfig>){setPanel({...panel,layout:{...panel.layout,header:{...getHeader(panel.layout),...next}}})}
 	const previewWeather={...weather,layout:panel.layout,display:buildDisplay(panel.screenWidth,panel.screenHeight,panel.colorMode)}
 	const refreshValue=refreshPresets.includes(panel.refreshMinutes)?String(panel.refreshMinutes):'custom'
 	const sizePreset=sizePresetId(panel.screenWidth,panel.screenHeight)
@@ -122,6 +124,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 	const addableBlocks=unusedBlocks.filter(id=>layoutWithAdded(id)!==null)
 	const canAddCard=panel.layout.blocks.length<MAX_BLOCKS&&addableBlocks.length>0
 	const selected=selectedId&&panel.layout.blocks.includes(selectedId)?selectedId:null
+	const header=getHeader(panel.layout)
 	const selectedSpan=selected?getCardSpan(panel.layout,selected):1
 	const selectedRowSpan=selected?getCardRowSpan(panel.layout,selected):1
 	const catalogIds=adding?addableBlocks:selected?BLOCK_IDS.filter(id=>id===selected||!panel.layout.blocks.includes(id)):[]
@@ -143,17 +146,36 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 				{(customSize||sizePreset==='custom')&&<div className="two-columns"><label>Ширина, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenWidth} onChange={e=>applyDisplay({screenWidth:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label><label>Высота, px<input type="number" min={MIN_SCREEN} max={MAX_SCREEN} step={2} value={panel.screenHeight} onChange={e=>applyDisplay({screenHeight:Math.max(MIN_SCREEN,Math.min(MAX_SCREEN,Number(e.target.value)||MIN_SCREEN))})}/></label></div>}
 				<label>Цвета панели<select value={panel.colorMode} onChange={e=>applyDisplay({colorMode:e.target.value as ColorModeId})}>{COLOR_MODE_IDS.map(id=><option key={id} value={id}>{COLOR_MODES[id].label}</option>)}</select></label>
 				<div className="palette-row" aria-hidden="true">{(colorMeta.palette.length?colorMeta.palette:['#1d4ed8','#c45c26','#f2c200','#15803d','#11130f','#f6f1e6']).map(hex=><i key={hex} style={{background:hex}}/>)}</div>
+				<label>Размер шрифта<input type="range" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} step={5} value={getFontSize(panel.layout)} onChange={e=>setPanel({...panel,layout:{...panel.layout,fontSize:normalizeFontSize(Number(e.target.value))}})}/><small>{getFontSize(panel.layout)}%</small></label>
 				<p className="section-note">{panel.screenWidth}×{panel.screenHeight} · {colorMeta.colors?`${colorMeta.colors} цвета`:'RGB'} · PNG квантуется в выбранную палитру</p>
+				<button className="text-button header-edit-link" type="button" onClick={selectHeader}>Настроить шапку экрана</button>
 			</section>
 			<section className="control-section link-section"><div className="section-heading"><span>02</span><h2>Ссылка устройства</h2></div><code>{baseUrl}</code><div className="button-row"><button className="secondary-button" onClick={()=>copy(baseUrl)}>Копировать URL</button><button className="text-button danger" onClick={rotate}>Заменить</button></div><p className="section-note">В прошивку вставляется только этот базовый URL. Wi‑Fi остаётся локально на плате.</p></section>
 			<div className="save-dock"><button className="primary-button" onClick={save} disabled={saving}>{saving?'Сохраняем…':'Сохранить изменения'}</button>{message&&<p className="save-message" role="status">{message}</p>}</div>
-		</aside><section className="preview-area" onClick={()=>{setAdding(false);setSelectedId(null)}}>
+		</aside><section className="preview-area" onClick={()=>{setAdding(false);setSelectedId(null);setSelectedHeader(false)}}>
 			<div className="preview-label"><div><span>EDIT ON SCREEN</span><b>{panel.screenWidth}×{panel.screenHeight} · {colorMeta.label}</b></div><a href={screenUrl} target="_blank" rel="noreferrer">Открыть PNG ↗</a></div>
 			<div className="preview-stage" ref={previewStage}>
 			<div className="device-frame" onClick={event=>event.stopPropagation()}><div className="screen-bezel component-host" ref={previewHost} style={{width:panel.screenWidth*previewScale+16,height:panel.screenHeight*previewScale+16}}><div className="component-preview" style={{width:panel.screenWidth,height:panel.screenHeight,transform:`scale(${previewScale})`}}>
-				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} onSelect={()=>{setSelectedId(id);setAdding(false)}} onRemove={()=>removeBlock(id)} canRemove={panel.layout.blocks.length>1}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
+				<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={panel.layout.blocks} strategy={rectSortingStrategy}><WeatherScreen weather={previewWeather} generatedAtLocal={previewWeather.observedAt} renderHeader={content=>content?<div className={`screen-header-hit${selectedHeader?' is-selected':''}`} onClick={event=>{event.stopPropagation();selectHeader()}}>{content}</div>:<div className="header-ghost-host"><button className={`header-ghost${selectedHeader?' is-selected':''}`} type="button" onClick={event=>{event.stopPropagation();selectHeader()}}>Шапка скрыта · нажмите, чтобы настроить</button></div>} renderBlock={(id,content)=><InlineSortableBlock key={id} id={id} selected={selected===id} onSelect={()=>{setSelectedId(id);setAdding(false);setSelectedHeader(false)}} onRemove={()=>removeBlock(id)} canRemove={panel.layout.blocks.length>1}>{content}</InlineSortableBlock>} addSlot={canAddCard?<button className={`inline-add-slot${adding?' is-active':''}`} type="button" onClick={event=>{event.stopPropagation();setAdding(true);setSelectedId(null);setSelectedHeader(false)}}>+ Добавить карточку</button>:undefined}/></SortableContext></DndContext>
 			</div>{previewLoading&&<span className="preview-loading">Обновляем погоду…</span>}</div><div className="device-foot"><span>{panel.screenWidth}×{panel.screenHeight}</span><i/><span>{colorMeta.colors?`${colorMeta.colors}C`:'RGB'}</span></div></div>
-			{(selected||adding)&&<aside className="card-inspector" onClick={event=>event.stopPropagation()}>
+			{(selected||adding||selectedHeader)&&<aside className="card-inspector" onClick={event=>event.stopPropagation()}>
+				{selectedHeader?<>
+					<div className="inspector-kicker">Шапка экрана</div>
+					<h2>Город и время</h2>
+					<div className="inspector-toggles">
+						<label><span>Показывать шапку</span><input type="checkbox" checked={header.visible} onChange={e=>patchHeader({visible:e.target.checked})}/></label>
+						<label><span>Город / заголовок</span><input type="checkbox" checked={header.showCity} onChange={e=>patchHeader({showCity:e.target.checked})} disabled={!header.visible}/></label>
+						<label><span>Координаты</span><input type="checkbox" checked={header.showCoords} onChange={e=>patchHeader({showCoords:e.target.checked})} disabled={!header.visible}/></label>
+						<label><span>Дата</span><input type="checkbox" checked={header.showDate} onChange={e=>patchHeader({showDate:e.target.checked})} disabled={!header.visible}/></label>
+						<label><span>Время</span><input type="checkbox" checked={header.showTime} onChange={e=>patchHeader({showTime:e.target.checked})} disabled={!header.visible}/></label>
+					</div>
+					<div className="size-board">
+						<label>Свой заголовок<input value={header.title??''} placeholder={panel.cityName} disabled={!header.visible} onChange={e=>patchHeader({title:e.target.value.slice(0,48)||undefined})}/><small>Пустое поле — название города</small></label>
+						<div><span>Стиль</span><div className="size-pips header-style-pips">{([{id:'fill',label:'Заливка'},{id:'invert',label:'Светлая'},{id:'line',label:'Линия'}] as {id:HeaderStyle;label:string}[]).map(item=><button key={item.id} type="button" className={header.style===item.id?'is-on':''} disabled={!header.visible} onClick={()=>patchHeader({style:item.id})}>{item.label}</button>)}</div></div>
+						<div><span>Высота</span><div className="size-pips">{([{id:'s',label:'S'},{id:'m',label:'M'},{id:'l',label:'L'}] as {id:HeaderSize;label:string}[]).map(item=><button key={item.id} type="button" className={header.size===item.id?'is-on':''} disabled={!header.visible} onClick={()=>patchHeader({size:item.id})}>{item.label}</button>)}</div></div>
+						<button className="text-button" type="button" onClick={()=>setPanel({...panel,layout:{...panel.layout,header:DEFAULT_HEADER}})}>Сбросить шапку</button>
+					</div>
+				</>:<>
 				<div className="inspector-kicker">{adding?'Новая карточка':'Карточка'}</div>
 				<h2>{adding?'Выберите тип':selected?blockNames[selected]:'Карточка'}</h2>
 				{selected&&!adding&&<div className="size-board">
@@ -161,6 +183,7 @@ export function PanelEditor({initialPanel,initialWeather,origin,username}:{initi
 					<div><span>Высота</span><div className="size-pips">{CARD_ROW_SPANS.map(value=><button key={value} type="button" className={selectedRowSpan===value?'is-on':''} disabled={!layoutFits(withCardSize(panel.layout,selected,{rowSpan:value}))} onClick={()=>resizeBlock(selected,{rowSpan:value})}>{value}/2</button>)}</div></div>
 				</div>}
 				<div className="inspector-catalog">{blockGroups.map(group=>{const ids=group.ids.filter(id=>catalogIds.includes(id));return ids.length?<section key={group.label}><h3>{group.label}</h3><div className="thumb-grid">{ids.map(id=><button key={id} type="button" className={`thumb-pick${selected===id?' is-current':''}`} onClick={()=>adding?addBlock(id):selected&&replaceBlock(selected,id)}><CardThumb id={id} weather={previewWeather} span={catalogSpan} rowSpan={catalogRowSpan}/><b>{blockNames[id]}</b></button>)}</div></section>:null})}</div>
+				</>}
 			</aside>}
 			</div>
 			<div className="endpoint-strip"><div><span>CONFIG</span><code>{baseUrl}/config</code></div><button onClick={()=>copy(`${baseUrl}/config`)}>Копировать</button></div>

@@ -67,9 +67,9 @@ export function normalizeDisplay(width: unknown, height: unknown, colorMode: unk
 }
 
 function themeFor(mode: ColorModeId) {
-	if (mode === 'bwr') return {ink: '#000000', paper: '#ffffff', accent: '#c00000', headerBg: '#000000', headerFg: '#ffffff', fill: '#c00000', sky: '#ffffff', ground: '#000000'}
-	if (mode === 'bwy') return {ink: '#000000', paper: '#ffffff', accent: '#f2c200', headerBg: '#000000', headerFg: '#ffffff', fill: '#f2c200', sky: '#ffffff', ground: '#000000'}
-	if (mode === 'spectra4') return {ink: '#000000', paper: '#ffffff', accent: '#c00000', headerBg: '#000000', headerFg: '#ffffff', fill: '#c00000', sky: '#f2c200', ground: '#000000'}
+	if (mode === 'bwr') return {ink: '#000000', paper: '#ffffff', accent: '#c00000', headerBg: '#c00000', headerFg: '#ffffff', fill: '#c00000', sky: '#ffffff', ground: '#c00000'}
+	if (mode === 'bwy') return {ink: '#000000', paper: '#ffffff', accent: '#f2c200', headerBg: '#f2c200', headerFg: '#000000', fill: '#f2c200', sky: '#ffffff', ground: '#f2c200'}
+	if (mode === 'spectra4') return {ink: '#000000', paper: '#ffffff', accent: '#c00000', headerBg: '#c00000', headerFg: '#ffffff', fill: '#f2c200', sky: '#f2c200', ground: '#c00000'}
 	if (mode === 'spectra6') return {ink: '#000000', paper: '#ffffff', accent: '#c00000', headerBg: '#1d4ed8', headerFg: '#ffffff', fill: '#1d4ed8', sky: '#1d4ed8', ground: '#15803d'}
 	if (mode === 'rgb') return {ink: '#11130f', paper: '#f6f1e6', accent: '#c45c26', headerBg: '#12355b', headerFg: '#f6f1e6', fill: '#1d4ed8', sky: '#5ba3d9', ground: '#3d6b3a'}
 	return {ink: '#000000', paper: '#ffffff', accent: '#000000', headerBg: '#000000', headerFg: '#ffffff', fill: '#000000', sky: '#ffffff', ground: '#000000'}
